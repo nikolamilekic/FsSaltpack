@@ -1,0 +1,7 @@
+FSharp.Core
+FSharpPlus
+Milekic.YoLo
+Expecto
+Expecto.BenchmarkDotNet
+Expecto.FsCheck
+Unquote

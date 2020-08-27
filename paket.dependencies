@@ -1,0 +1,35 @@
+source https://api.nuget.org/v3/index.json
+storage: none
+
+framework: auto-detect
+
+nuget FSharp.Core >= 4.3.4 lowest_matching: true, redirects: force
+nuget FSharpPlus >= 1.1.3
+nuget Milekic.YoLo prerelease storage: symlink
+nuget GitInfo = 2.0.26 copy_local: true
+nuget Microsoft.SourceLink.GitHub copy_local: true
+nuget Expecto
+nuget Expecto.BenchmarkDotNet
+nuget Expecto.FsCheck
+nuget Unquote
+
+// [ FAKE GROUP ]
+group Build
+    storage none
+    source https://api.nuget.org/v3/index.json
+
+    framework: netstandard2.0
+
+    nuget FSharp.Core
+    nuget FSharpPlus
+    nuget Fake.Api.GitHub
+    nuget Fake.BuildServer.AppVeyor
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Core.Target
+    nuget Fake.DotNet.Cli
+    nuget Fake.DotNet.Paket
+    nuget Fake.DotNet.Testing.Expecto
+    nuget Fake.IO.FileSystem
+    nuget Fake.IO.Zip
+    nuget Fake.Runtime
+    nuget Fake.Tools.Git
