@@ -19,6 +19,7 @@
     </AssemblyAttribute>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Encryption.fs" />
   </ItemGroup>
   <Import Project="..\..\packages\Milekic.YoLo\SetVersion.targets" />
   <Import Project="..\..\.paket\Paket.Restore.targets" />

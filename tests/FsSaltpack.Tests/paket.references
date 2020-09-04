@@ -1,6 +1,7 @@
 FSharp.Core
 FSharpPlus
 Milekic.YoLo
+FsSodium
 Expecto
 Expecto.BenchmarkDotNet
 Expecto.FsCheck
