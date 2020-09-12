@@ -1,158 +1,352 @@
 #load ".fake/build.fsx/intellisense.fsx"
 
-open System
-open System.IO
-open System.Text.RegularExpressions
+Fake.Core.Target.initEnvironment ()
 
-open Fake.Api
-open Fake.Core
-open Fake.Core.TargetOperators
-open Fake.DotNet
-open Fake.DotNet.Testing
-open Fake.IO
-open Fake.IO.Globbing.Operators
-open Fake.IO.FileSystemOperators
-open Fake.Runtime
-open Fake.Tools.Git
-open Fake.BuildServer
-open FSharpPlus
+module CustomTargetOperators =
+    //nuget Fake.Core.Target
 
-let productName = "FsSaltpack"
-let gitOwner = "nikolamilekic"
-let gitHome = "git@github.com:nikolamilekic/FsSaltpack.git"
-let releaseNotes =
-    (ReleaseNotes.load "RELEASE_NOTES.md").Notes
-    |> String.concat Environment.NewLine
-let pathToAssemblyInfoFile = "/src/FsSaltpack/obj/Release/netstandard2.0/FsSaltpack.AssemblyInfo.fs"
-let uploadPackageToNuget = false
+    open Fake.Core.TargetOperators
 
-let (|Regex|_|) pattern input =
-    let m = Regex.Match(input, pattern)
-    if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-    else None
+    let (==>) xs y = xs |> Seq.iter (fun x -> x ==> y |> ignore)
+    let (?=>) xs y = xs |> Seq.iter (fun x -> x ?=> y |> ignore)
 
-let finalVersion =
-    lazy
-    __SOURCE_DIRECTORY__ + pathToAssemblyInfoFile
-    |> File.readAsString
-    |> function
-        | Regex "AssemblyInformationalVersionAttribute\(\"(.+)\"\)>]" [ version ] ->
-            SemVer.parse version
-        | _ -> failwith "Could not parse assembly version"
+module FinalVersion =
+    //nuget Fake.IO.FileSystem
 
-let (==>) xs y = xs |> Seq.iter (fun x -> x ==> y |> ignore)
-let (?=>) xs y = xs |> Seq.iter (fun x -> x ?=> y |> ignore)
+    open System.Text.RegularExpressions
+    open Fake.IO
+    open Fake.IO.Globbing.Operators
+    open Fake.Core
 
-Target.initEnvironment ()
+    let pathToAssemblyInfoFile =
+        lazy
+        !! "src/*/obj/Release/**/*.AssemblyInfo.fs"
+        |> Seq.head
 
-Target.create "Clean" <| fun _ ->
-    lift2 tuple2 [|"src"; "tests"|] [|"bin"; "obj"|]
-    >>= fun (x,y) -> !!(sprintf "%s/**/%s" x y) |> toSeq
-    |> plus ([|"bin"; "obj"|] |> toSeq)
-    |> Shell.deleteDirs
+    let (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+        else None
 
-    Shell.cleanDir "publish"
+    let finalVersion =
+        lazy
+        pathToAssemblyInfoFile.Value
+        |> File.readAsString
+        |> function
+            | Regex "AssemblyInformationalVersionAttribute\(\"(.+)\"\)>]" [ version ] ->
+                SemVer.parse version
+            | _ -> failwith "Could not parse assembly version"
 
-Target.create "Build" <| fun _ ->
-    DotNet.build id (productName + ".sln")
-    !! "src/**/*.fsproj"
-    |> toSeq
-    |>> (fun projectPath ->
-        (Path.GetDirectoryName projectPath) </> "bin/Release",
-        "bin" </> (Path.GetFileNameWithoutExtension projectPath))
-    |> iter (fun (source, target) -> Shell.copyDir target source (konst true))
+module ReleaseNotesParsing =
+    //nuget Fake.Core.ReleaseNotes
 
-[ "Clean" ]  ?=> "Build"
+    open System
+    open Fake.Core
 
-Target.create "Pack" <| fun _ ->
-    let newBuildProperties = [ "PackageReleaseNotes", releaseNotes ]
-    DotNet.pack
-        (fun p ->
-            { p with
-                OutputPath = Some (__SOURCE_DIRECTORY__ + "/publish")
-                MSBuildParams =
-                    { p.MSBuildParams with
-                        Properties =
-                            newBuildProperties @ p.MSBuildParams.Properties }})
-        (productName + ".sln")
+    let releaseNotesFile = "RELEASE_NOTES.md"
+    let releaseNotes =
+        lazy
+        (ReleaseNotes.load releaseNotesFile).Notes
+        |> String.concat Environment.NewLine
 
-[ "Clean" ] ==> "Pack"
+module Clean =
+    //nuget FSharpPlus
+    //nuget Fake.IO.FileSystem
 
-Target.create "Test" <| fun _ ->
-    !! "tests/**/*.fsproj"
-    |> toSeq
-    >>= fun projectPath ->
-        let projectName = Path.GetFileNameWithoutExtension projectPath
-        !! (sprintf "tests/%s/bin/release/**/%s.dll" projectName projectName)
+    open Fake.IO
+    open Fake.IO.Globbing.Operators
+    open Fake.Core
+    open FSharpPlus
+
+    Target.create "Clean" <| fun _ ->
+        lift2 tuple2 [|"src"; "tests"|] [|"bin"; "obj"|]
+        >>= fun (x,y) -> !!(sprintf "%s/**/%s" x y) |> toSeq
+        |> plus ([|"bin"; "obj"|] |> toSeq)
+        |> Shell.deleteDirs
+
+        Shell.cleanDir "publish"
+
+module Build =
+    //nuget Fake.DotNet.Cli
+    //nuget Fake.BuildServer.AppVeyor
+    //nuget Fake.IO.FileSystem
+
+    open Fake.DotNet
+    open Fake.Core
+    open Fake.Core.TargetOperators
+    open Fake.BuildServer
+    open Fake.IO.Globbing.Operators
+
+    open FinalVersion
+
+    let projectToBuild = !! "*.sln" |> Seq.head
+
+    Target.create "Build" <| fun _ ->
+        DotNet.build id projectToBuild
+
+        if AppVeyor.detect() then
+            let finalVersion = finalVersion.Value
+            let appVeyorVersion =
+                sprintf
+                    "%d.%d.%d.%s"
+                    finalVersion.Major
+                    finalVersion.Minor
+                    finalVersion.Patch
+                    AppVeyor.Environment.BuildNumber
+
+            AppVeyor.updateBuild (fun p -> { p with Version = appVeyorVersion })
+
+    "Clean" ?=> "Build"
+
+module Pack =
+    //nuget Fake.DotNet.Cli
+    //nuget Fake.IO.FileSystem
+
+    open Fake.DotNet
+    open Fake.Core
+    open Fake.IO.Globbing.Operators
+
+    open CustomTargetOperators
+    open ReleaseNotesParsing
+
+    let projectToPack = !! "*.sln" |> Seq.head
+
+    Target.create "Pack" <| fun _ ->
+        let newBuildProperties = [ "PackageReleaseNotes", releaseNotes.Value ]
+        DotNet.pack
+            (fun p ->
+                { p with
+                    OutputPath = Some (__SOURCE_DIRECTORY__ + "/publish")
+                    NoBuild = true
+                    MSBuildParams =
+                        { p.MSBuildParams with
+                            Properties =
+                                newBuildProperties @ p.MSBuildParams.Properties }})
+            projectToPack
+
+    [ "Clean"; "Build" ] ==> "Pack"
+
+module Publish =
+    //nuget FSharpPlus
+    //nuget Fake.DotNet.Cli
+    //nuget Fake.IO.FileSystem
+    //nuget Fake.IO.Zip
+
+    open System.IO
+    open Fake.DotNet
+    open Fake.Core
+    open Fake.IO
+    open Fake.IO.Globbing.Operators
+    open Fake.IO.FileSystemOperators
+    open FSharpPlus
+
+    open FinalVersion
+    open CustomTargetOperators
+
+    let projectsToPublish = [ ]
+
+    Target.create "Publish" <| fun _ ->
+        for (project, framework, runtime, custom) in projectsToPublish do
+            project
+            |> DotNet.publish (fun p ->
+                { p with
+                    Framework = framework
+                    Runtime = runtime
+                    Common = { p.Common with CustomParams = custom } } )
+
+            let sourceFolder =
+                seq {
+                    project |> Some
+                    "bin/Release" |> Some
+                    framework
+                    runtime
+                    "publish" |> Some
+                }
+                |> Seq.choose id
+                |> Seq.fold (</>) ""
+
+            let targetFolder =
+                seq {
+                    "publish" |> Some
+                    Path.GetFileName project |> Some
+                    framework
+                    runtime
+                }
+                |> Seq.choose id
+                |> Seq.fold (</>) ""
+
+            Shell.copyDir targetFolder sourceFolder (konst true)
+
+            let zipFileName =
+                seq {
+                    sprintf
+                        "%s.%s"
+                        (Path.GetFileName project)
+                        (finalVersion.Value.NormalizeToShorter()) |> Some
+                    framework
+                    runtime
+                }
+                |> Seq.choose id
+                |> String.concat "."
+
+            Zip.zip
+                targetFolder
+                (sprintf "publish/%s.zip" zipFileName)
+                !! (targetFolder </> "**")
+
+    [ "Clean"; "Build" ] ==> "Publish"
+
+module Test =
+    //nuget FSharpPlus
+    //nuget Fake.IO.FileSystem
+    //nuget Fake.DotNet.Testing.Expecto
+
+    open System.IO
+    open Fake.Core
+    open Fake.Core.TargetOperators
+    open Fake.IO.Globbing.Operators
+    open Fake.DotNet.Testing
+    open FSharpPlus
+
+    Target.create "Test" <| fun _ ->
+        !! "tests/**/*.fsproj"
         |> toSeq
-    |> Expecto.run id
-[ "Build"; "Pack" ] ?=> "Test"
+        >>= fun projectPath ->
+            let projectName = Path.GetFileNameWithoutExtension projectPath
+            !! (sprintf "tests/%s/bin/release/**/%s.dll" projectName projectName)
+            |> toSeq
+        |> Expecto.run id
+    "Build" ==> "Test"
 
-Target.create "TestSourceLink" <| fun _ ->
-    !! "publish/*.nupkg"
-    |> flip Seq.iter <| fun p ->
-        DotNet.exec
-            id
-            "sourcelink"
-            (sprintf "test %s" p)
-        |> fun r -> if not r.OK then failwithf "Source link check for %s failed." p
+module TestSourceLink =
+    //nuget FSharpPlus
+    //nuget Fake.IO.FileSystem
+    //nuget Fake.DotNet.Cli
 
-[ "Pack" ] ==> "TestSourceLink"
+    open Fake.Core
+    open Fake.Core.TargetOperators
+    open Fake.IO.Globbing.Operators
+    open Fake.DotNet
+    open FSharpPlus
 
-Target.create "UploadArtifactsToGitHub" <| fun c ->
-    let finalVersion = finalVersion.Value
-    if c.Context.FinalTarget = "AppVeyor" && finalVersion.PreRelease.IsSome
-    then () else
+    Target.create "TestSourceLink" <| fun _ ->
+        !! "publish/*.nupkg"
+        |> flip Seq.iter <| fun p ->
+            DotNet.exec
+                id
+                "sourcelink"
+                (sprintf "test %s" p)
+            |> fun r -> if not r.OK then failwithf "Source link check for %s failed." p
 
-    let token = Environment.environVarOrFail "GitHubToken"
-    GitHub.createClientWithToken token
-    |> GitHub.createRelease
-        gitOwner
-        productName
-        (finalVersion.NormalizeToShorter())
-        (fun o ->
-            { o with
-                Body = releaseNotes
-                Prerelease = (finalVersion.PreRelease <> None)
-                TargetCommitish = AppVeyor.Environment.RepoCommit })
-    |> GitHub.uploadFiles !! "publish/*"
-    |> GitHub.publishDraft
-    |> Async.RunSynchronously
+    "Pack" ==> "TestSourceLink"
 
-[ "TestSourceLink"; "Test" ] ==> "UploadArtifactsToGitHub"
+module UploadArtifactsToGitHub =
+    //nuget Fake.Api.GitHub
+    //nuget Fake.IO.FileSystem
+    //nuget Fake.BuildServer.AppVeyor
 
-Target.create "UploadPackageToNuget" <| fun _ ->
-    if uploadPackageToNuget then
-        Paket.push <| fun p ->
-            { p with
-                ToolType = ToolType.CreateLocalTool()
-                WorkingDir = __SOURCE_DIRECTORY__ + "/publish" }
+    open System.IO
+    open Fake.Core
+    open Fake.Api
+    open Fake.IO.Globbing.Operators
+    open Fake.BuildServer
 
-[ "TestSourceLink"; "Test" ] ==> "UploadPackageToNuget"
+    open CustomTargetOperators
+    open FinalVersion
+    open ReleaseNotesParsing
 
-Target.create "Release" <| fun _ ->
-    CommandHelper.directRunGitCommandAndFail
-        ""
-        (sprintf "push -f %s HEAD:release" gitHome)
+    let productName = !! "*.sln" |> Seq.head |> Path.GetFileNameWithoutExtension
+    let gitOwner = "nikolamilekic"
 
-[ "Clean"; "Build"; "Test" ] ==> "Release"
+    Target.create "UploadArtifactsToGitHub" <| fun _ ->
+        let finalVersion = finalVersion.Value
+        if AppVeyor.detect() && finalVersion.PreRelease.IsNone then
+            let token = Environment.environVarOrFail "GitHubToken"
+            GitHub.createClientWithToken token
+            |> GitHub.createRelease
+                gitOwner
+                productName
+                (finalVersion.NormalizeToShorter())
+                (fun o ->
+                    { o with
+                        Body = releaseNotes.Value
+                        Prerelease = (finalVersion.PreRelease <> None)
+                        TargetCommitish = AppVeyor.Environment.RepoCommit })
+            |> GitHub.uploadFiles (!! "publish/*.nupkg" ++ "publish/*.zip")
+            |> GitHub.publishDraft
+            |> Async.RunSynchronously
 
-Target.create "AppVeyor" <| fun _ ->
-    let finalVersion = finalVersion.Value
-    if AppVeyor.detect() then
-        let appVeyorVersion =
-            sprintf
-                "%d.%d.%d.%s"
-                finalVersion.Major
-                finalVersion.Minor
-                finalVersion.Patch
-                AppVeyor.Environment.BuildNumber
+    [ "Pack"; "Publish"; "Test"; "TestSourceLink" ] ==> "UploadArtifactsToGitHub"
 
-        AppVeyor.updateBuild (fun p -> { p with Version = appVeyorVersion })
+module UploadPackageToNuget =
+    //nuget Fake.DotNet.Paket
+    //nuget Fake.BuildServer.AppVeyor
 
-[ "UploadArtifactsToGitHub"; "UploadPackageToNuget"; "Test" ] ==> "AppVeyor"
+    open Fake.Core
+    open Fake.DotNet
+    open Fake.BuildServer
 
-Target.create "Default" ignore
-[ "Build"; "Test" ] ==> "Default"
+    open FinalVersion
+    open CustomTargetOperators
 
-Target.runOrDefault "Default"
+    Target.create "UploadPackageToNuget" <| fun _ ->
+        if AppVeyor.detect() && finalVersion.Value.PreRelease.IsNone then
+            Paket.push <| fun p ->
+                { p with
+                    ToolType = ToolType.CreateLocalTool()
+                    WorkingDir = __SOURCE_DIRECTORY__ + "/publish" }
+
+    [ "Pack"; "Test"; "TestSourceLink" ] ==> "UploadPackageToNuget"
+
+module Release =
+    //nuget Fake.Tools.Git
+
+    open System.Text.RegularExpressions
+    open Fake.IO
+    open Fake.IO.Globbing.Operators
+    open Fake.Core
+    open Fake.Tools
+
+    open CustomTargetOperators
+
+    let pathToThisAssemblyFile =
+        !! "src/*/obj/Release/**/ThisAssembly.GitInfo.g.fs"
+        |> Seq.head
+
+    let (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+        else None
+
+    let gitHome =
+        pathToThisAssemblyFile
+        |> File.readAsString
+        |> function
+            | Regex "RepositoryUrl = @\"(.+)\"" [ gitHome ] -> gitHome
+            | _ -> failwith "Could not parse this assembly file"
+
+    Target.create "Release" <| fun _ ->
+        Git.CommandHelper.directRunGitCommandAndFail
+            ""
+            (sprintf "push -f %s HEAD:release" gitHome)
+
+    [ "Clean"; "Build"; "Test" ] ==> "Release"
+
+module AppVeyor =
+    open Fake.Core
+
+    open CustomTargetOperators
+
+    Target.create "AppVeyor" ignore
+    [ "UploadArtifactsToGitHub"; "UploadPackageToNuget" ]
+    ==> "AppVeyor"
+
+module Default =
+    open Fake.Core
+
+    open CustomTargetOperators
+
+    Target.create "Default" ignore
+    [ "Build"; "Test" ] ==> "Default"
+
+    Target.runOrDefault "Default"

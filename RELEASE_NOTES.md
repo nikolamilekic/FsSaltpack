@@ -1,2 +1,2 @@
-### 0.1 - Unreleased
+## New in 0.1 (Unreleased)
 * Initial release
