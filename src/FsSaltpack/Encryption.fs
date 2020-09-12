@@ -154,8 +154,8 @@ let encryptTo
 
     let buffersFactory = SecretKeyEncryption.makeBuffersFactory()
     let buffers = buffersFactory.FromPlainText(inputBuffer)
-    let encrypt a =
-        SecretKeyEncryption.encryptTo payloadKey buffers a
+    let encrypt nonce =
+        SecretKeyEncryption.encryptTo payloadKey nonce buffers
         >> Result.mapError EncryptionSodiumError
 
     let rec iter index = monad.strict {
