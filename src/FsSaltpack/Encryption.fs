@@ -9,18 +9,18 @@ open FSharpPlus
 open MsgPack
 open FsSodium
 
-let senderSecretBoxNonce =
+let private senderSecretBoxNonce =
     Encoding.ASCII.GetBytes("saltpack_sender_key_sbox")
     |> SecretKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import sender secret box nonce")
 
-let makeRecipientsNonce index =
+let private makeRecipientsNonce index =
     Encoding.ASCII.GetBytes("saltpack_recipsb")
     ++ (index |> uint64 |> toBytes)
     |> PublicKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import recipients nonce")
 
-let makePayloadNonce index =
+let private makePayloadNonce index =
     Encoding.ASCII.GetBytes("saltpack_ploadsb")
     ++ (index |> uint64 |> toBytes)
     |> SecretKeyEncryption.Nonce.Import

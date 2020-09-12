@@ -7,13 +7,13 @@ open System.Numerics
 open System.Text
 open FSharpPlus
 
-let blockLength = 32
-let encodedBlockLength = 43
-let wordLength = 15
-let lineLength = 200
-let alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-let alphabetLength = bigint 62
-let charToInt = function
+let private blockLength = 32
+let private encodedBlockLength = 43
+let private wordLength = 15
+let private lineLength = 200
+let private alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+let private alphabetLength = bigint 62
+let private charToInt = function
     | c when c >= '0' && c <= '9' -> int c - 48
     | c when c >= 'A' && c <= 'Z' -> int c - 55
     | c when c >= 'a' && c <= 'z' -> int c - 61
@@ -21,7 +21,7 @@ let charToInt = function
 
 type Mode = EncryptedMessage
 
-let encode input =
+let internal encode input =
     if Array.isEmpty input then Seq.empty else
     let rec generator x = seq {
         let remainder = x % alphabetLength |> int
@@ -36,7 +36,7 @@ let encode input =
         Math.Ceiling(8.0 * (float length) / Math.Log(62.0, 2.0)) |> int
     generator (bigint array) |> Seq.take characters |> Seq.rev
 
-let decode input =
+let internal decode input =
     let characters =
         Math.Floor(Math.Log(62.0, 2.0) / 8.0 * float (Seq.length input)) |> int
     let value =
