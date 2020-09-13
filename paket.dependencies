@@ -16,6 +16,18 @@ nuget Expecto.BenchmarkDotNet
 nuget Expecto.FsCheck
 nuget Unquote
 
+group Console
+    source https://api.nuget.org/v3/index.json
+    storage: none
+
+    framework: auto-detect
+
+    nuget FSharp.Core
+    nuget FSharpPlus
+    nuget Milekic.YoLo
+    nuget Argu
+    nuget GitInfo
+
 // [ FAKE GROUP ]
 group Build
     source https://api.nuget.org/v3/index.json
