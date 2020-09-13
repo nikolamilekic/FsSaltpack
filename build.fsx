@@ -359,7 +359,7 @@ module AppVeyor =
     open CustomTargetOperators
 
     Target.create "AppVeyor" ignore
-    [ "UploadArtifactsToGitHub"; "UploadPackageToNuget" ]
+    [ "UploadArtifactsToGitHub" ]
     ==> "AppVeyor"
 
 module Default =
