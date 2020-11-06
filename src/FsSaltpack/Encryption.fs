@@ -16,13 +16,13 @@ let private senderSecretBoxNonce =
 
 let private makeRecipientsNonce index =
     Encoding.ASCII.GetBytes("saltpack_recipsb")
-    ++ (index |> uint64 |> toBytes)
+    ++ (index |> uint64 |> toBytesBE)
     |> PublicKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import recipients nonce")
 
 let private makePayloadNonce index =
     Encoding.ASCII.GetBytes("saltpack_ploadsb")
-    ++ (index |> uint64 |> toBytes)
+    ++ (index |> uint64 |> toBytesBE)
     |> SecretKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import payload nonce")
 
@@ -36,7 +36,7 @@ let private makeAuthenticationKey
     keyPair2 = monad.strict {
     let rawNonce =
         (headerHash |> take 16)
-        ++ (index |> uint64 |> toBytes)
+        ++ (index |> uint64 |> toBytesBE)
     rawNonce.[15] <- rawNonce.[15] &&& 0xfeuy
     let! encryptedZerosIdentity =
         let nonce =
@@ -63,16 +63,16 @@ type EncryptionError =
     | ReadError of IOException
     | WriteError of Exception
 let encryptTo
-    senderKeyPair
+    senderKeypair
     (recipients : _ seq)
     (input : Stream)
     (output : Stream) = monad.strict {
 
     let payloadKey = SecretKeyEncryption.Key.Generate()
-    let! ephemeralKeyPair =
+    let! ephemeralKeypair =
         PublicKeyEncryption.SecretKey.Generate()
         |> Result.mapError EncryptionSodiumError
-    let identityKeypair = senderKeyPair |> Option.defaultValue ephemeralKeyPair
+    let identityKeypair = senderKeypair |> Option.defaultValue ephemeralKeypair
     let! senderSecretBox =
         SecretKeyEncryption.encrypt
             payloadKey
@@ -86,7 +86,7 @@ let encryptTo
             let nonce = makeRecipientsNonce index
             let! encryptedPayloadKey =
                 PublicKeyEncryption.encrypt
-                    (fst ephemeralKeyPair)
+                    (fst ephemeralKeypair)
                     recipientPublicKey
                     nonce
                     payloadKey.Get
@@ -106,7 +106,7 @@ let encryptTo
             .PackString("saltpack")
             .PackArray([| 2uy; 0uy |])
             .Pack(0uy)
-            .PackBinary((snd ephemeralKeyPair).Get)
+            .PackBinary((snd ephemeralKeypair).Get)
             .PackBinary(senderSecretBox)
         |> ignore
 
@@ -132,7 +132,7 @@ let encryptTo
                 headerHash
                 index
                 (fst identityKeypair, recipientKey)
-                (fst ephemeralKeyPair, recipientKey)
+                (fst ephemeralKeypair, recipientKey)
             |> Result.mapError EncryptionSodiumError)
         |> Result.sequence
 
