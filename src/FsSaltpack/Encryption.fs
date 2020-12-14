@@ -14,15 +14,15 @@ let private senderSecretBoxNonce =
     |> SecretKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import sender secret box nonce")
 
-let private makeRecipientsNonce index =
+let private makeRecipientsNonce endianness index =
     Encoding.ASCII.GetBytes("saltpack_recipsb")
-    ++ (index |> uint64 |> toBytesBE)
+    ++ (index |> uint64 |> endianness)
     |> PublicKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import recipients nonce")
 
-let private makePayloadNonce index =
+let private makePayloadNonce endianness index =
     Encoding.ASCII.GetBytes("saltpack_ploadsb")
-    ++ (index |> uint64 |> toBytesBE)
+    ++ (index |> uint64 |> endianness)
     |> SecretKeyEncryption.Nonce.Import
     |> Result.failOnError ("Could not import payload nonce")
 
@@ -30,13 +30,14 @@ type RecipientType = Public | Anonymous
 
 let private zeros : byte[] = Array.zeroCreate 32
 let private makeAuthenticationKey
+    endianness
     (headerHash : byte[])
     index
     keyPair1
     keyPair2 = monad.strict {
     let rawNonce =
         (headerHash |> take 16)
-        ++ (index |> uint64 |> toBytesBE)
+        ++ (index |> uint64 |> endianness)
     rawNonce.[15] <- rawNonce.[15] &&& 0xfeuy
     let! encryptedZerosIdentity =
         let nonce =
@@ -63,6 +64,7 @@ type EncryptionError =
     | ReadError of IOException
     | WriteError of Exception
 let encryptTo
+    endianness
     senderKeypair
     (recipients : _ seq)
     (input : Stream)
@@ -83,7 +85,7 @@ let encryptTo
     let! encryptedPayloadKeys =
         recipients
         |> Seq.mapi (fun index (recipientType, recipientPublicKey) -> monad.strict {
-            let nonce = makeRecipientsNonce index
+            let nonce = makeRecipientsNonce endianness index
             let! encryptedPayloadKey =
                 PublicKeyEncryption.encrypt
                     (fst ephemeralKeypair)
@@ -129,6 +131,7 @@ let encryptTo
         recipients
         |> Seq.mapi (fun index (_, recipientKey) ->
             makeAuthenticationKey
+                endianness
                 headerHash
                 index
                 (fst identityKeypair, recipientKey)
@@ -160,7 +163,7 @@ let encryptTo
 
     let rec iter index = monad.strict {
         let! (readBytes, doneFlag) = read()
-        let nonce = makePayloadNonce index
+        let nonce = makePayloadNonce endianness index
         do! encrypt nonce readBytes
         let! authenticators = monad.strict {
             let! hashState =
@@ -270,9 +273,13 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
                 recipientList
                 |> Seq.filter (fun (_, b, _) -> b = None))
             |>> fun (index, _, box) ->
-                let nonce = makeRecipientsNonce index
+                let nonceBE = makeRecipientsNonce toBytesBE index
                 PublicKeyEncryption.decryptWithSharedSecret
-                    sharedSecret nonce box
+                    sharedSecret nonceBE box
+                |> Result.bindError (fun _ ->
+                    let nonceLE = makeRecipientsNonce toBytes index
+                    PublicKeyEncryption.decryptWithSharedSecret
+                        sharedSecret nonceLE box)
                 |> Option.ofResult
                 |>> fun x -> x, index
             |> Seq.tryPick id
@@ -290,8 +297,18 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
             >>= (PublicKeyEncryption.PublicKey.Import
                 >> Result.mapError (konst <| UnexpectedFormat "Sender public key length is wrong"))
 
-        let! authenticationKey =
+        let! authenticationKeyBE =
             makeAuthenticationKey
+                toBytesBE
+                headerHash
+                recipientIndex
+                (fst recipientKeyPair, senderPublicKey)
+                (fst recipientKeyPair, ephemeralPublicKey)
+            |> Result.mapError DecryptionSodiumError
+
+        let! authenticationKeyLE =
+            makeAuthenticationKey
+                toBytes
                 headerHash
                 recipientIndex
                 (fst recipientKeyPair, senderPublicKey)
@@ -307,33 +324,57 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
             let finalFlag = packet.[0].AsBoolean()
             let mac = packet.[1].AsList().[recipientIndex].AsBinary()
             let payload = packet.[2].AsBinary()
-            let nonce = makePayloadNonce index
+            let nonceBE = makePayloadNonce toBytesBE index
+            let nonceLE = makePayloadNonce toBytes index
 
-            let! hashState =
+            let! hashStateBE =
+                HashingSHA512.State.Create()
+                |> Result.mapError DecryptionSodiumError
+            let! hashStateLE =
                 HashingSHA512.State.Create()
                 |> Result.mapError DecryptionSodiumError
 
             do!
                 seq {
                     headerHash
-                    nonce.Get
+                    nonceBE.Get
                     if finalFlag then [| 1uy |] else [| 0uy |]
                     payload
                 }
-                |>> (HashingSHA512.hashPart hashState
+                |>> (HashingSHA512.hashPart hashStateBE
                     >> Result.mapError DecryptionSodiumError)
                 |> Result.sequence
                 >>= fun _ ->
-                    HashingSHA512.completeHash hashState
+                    HashingSHA512.completeHash hashStateBE
                     |> Result.mapError DecryptionSodiumError
                 >>= fun hash ->
-                    SecretKeyAuthentication.sign authenticationKey hash
+                    SecretKeyAuthentication.sign authenticationKeyBE hash
                     |> bimap DecryptionSodiumError (fun x -> x.Get |> take 32)
                 >>= fun actualMac ->
                     if actualMac = mac then Ok () else Error BadAuthenticator
+                |> Result.bindError (fun x ->
+                    seq {
+                        headerHash
+                        nonceLE.Get
+                        if finalFlag then [| 1uy |] else [| 0uy |]
+                        payload
+                    }
+                    |>> (HashingSHA512.hashPart hashStateLE
+                        >> Result.mapError DecryptionSodiumError)
+                    |> Result.sequence
+                    >>= fun _ ->
+                        HashingSHA512.completeHash hashStateLE
+                        |> Result.mapError DecryptionSodiumError
+                    >>= fun hash ->
+                        SecretKeyAuthentication.sign authenticationKeyLE hash
+                        |> bimap DecryptionSodiumError (fun x -> x.Get |> take 32)
+                    >>= fun actualMac ->
+                        if actualMac = mac then Ok () else Error BadAuthenticator)
 
             let! plainText =
-                SecretKeyEncryption.decrypt payloadKey nonce payload
+                SecretKeyEncryption.decrypt payloadKey nonceBE payload
+                |> Result.bindError (fun _ ->
+                    SecretKeyEncryption.decrypt payloadKey nonceLE payload)
                 |> Result.mapError DecryptionSodiumError
 
             do! write plainText
@@ -351,10 +392,10 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
         return! Error <| ReadError exn
 }
 
-let encrypt senderKeypair recipients (input : byte[]) =
+let encrypt endianness senderKeypair recipients (input : byte[]) =
     let input = new MemoryStream(input)
     let output = new MemoryStream()
-    encryptTo senderKeypair recipients input output |>> output.ToArray
+    encryptTo endianness senderKeypair recipients input output |>> output.ToArray
 
 let decrypt recipientKeyPair (input : byte[]) =
     let input = new MemoryStream(input)

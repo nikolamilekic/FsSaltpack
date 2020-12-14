@@ -83,7 +83,7 @@ let main argv =
                     PublicKeyEncryption.PublicKey.FromSecretKey x
                     |> Result.failOnError "Could not compute public from secret key"
             let unarmored =
-                Encryption.encrypt sender recipients input
+                Encryption.encrypt toBytesBE sender recipients input
                 |> Result.failOnError "Encryption failed"
             let armored = Armoring.armor None Armoring.EncryptedMessage unarmored
             File.WriteAllText(outputPath, armored)
