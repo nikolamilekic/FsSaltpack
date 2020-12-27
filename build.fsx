@@ -149,20 +149,43 @@ module Publish =
         if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
         else None
 
+    let runtimesToTarget = [ "osx-x64"; "win-x64"; "linux-arm"; "linux-x64" ]
+
     let projectsToPublish =
         !! "src/*/*.fsproj"
-        |> Seq.toList
-        >>= fun projectFile ->
-            match File.readAsString projectFile with
-            | Regex "TargetFramework.+(netcoreapp.+)<\/TargetFramework" [ framework ] ->
+        |> toSeq
+        |>> fun projectFile ->
+            let contents = File.readAsString projectFile
+            let outputType =
+                match contents with
+                | Regex "<OutputType>(.+)<\/OutputType>" [ outputType ] ->
+                    Some (outputType.ToLower())
+                | _ -> None
+            projectFile, contents, outputType
+        |> Seq.filter (fun (_, _, outputType) -> outputType = Some "exe")
+        >>= fun (projectFile, contents, _) ->
+            match contents with
+            | Regex "<TargetFramework.*>(.+)<\/TargetFramework" [ frameworks ] ->
                 let projectDirectory = Path.GetDirectoryName projectFile
-                [ "osx-x64"; "win-x64"; "linux-arm"; "linux-x64" ]
-                |>> fun runtime ->
-                    projectDirectory,
-                    Some framework,
-                    Some runtime,
-                    Some "-p:PublishSingleFile=true -p:PublishTrimmed=true"
-            | _ -> []
+                frameworks
+                |> String.split [";"]
+                |> Seq.filter (fun x -> x.StartsWith "netcoreapp" || x = "net5.0")
+                >>= fun framework ->
+                    let custom =
+                        match framework with
+                        | x when x.StartsWith "netcoreapp3" ->
+                            Some "-p:PublishSingleFile=true -p:PublishTrimmed=true"
+                        | "net5.0" ->
+                            Some "-p:PublishSingleFile=true -p:PublishTrimmed=true -p:IncludeNativeLibrariesForSelfExtract=true"
+                        | _ -> None
+                    runtimesToTarget
+                    |> List.toSeq
+                    |>> fun runtime ->
+                        projectDirectory,
+                        Some framework,
+                        Some runtime,
+                        custom
+            | _ -> Seq.empty
 
     Target.create "Publish" <| fun _ ->
         for (project, framework, runtime, custom) in projectsToPublish do
