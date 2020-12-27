@@ -8,6 +8,8 @@ open Milekic.YoLo
 open FSharpPlus
 open MsgPack
 open FsSodium
+open MessagePackParsing
+open MessagePackParsing.Parser
 
 let private senderSecretBoxNonce =
     Encoding.ASCII.GetBytes("saltpack_sender_key_sbox")
@@ -208,7 +210,7 @@ let encryptTo
 
 type DecryptionError =
     | DecryptionSodiumError of SodiumError
-    | ReadError of Exception
+    | ParsingError of String
     | WriteError of IOException
     | UnsupportedSaltpackVersion
     | WrongMode
@@ -217,138 +219,152 @@ type DecryptionError =
     | BadAuthenticator
 
 let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict {
-    try
-        let rawHeader = Unpacking.UnpackBinary(input)
-        let! headerHash =
-            HashingSHA512.hash rawHeader
-            |> Result.mapError DecryptionSodiumError
-        let header = Unpacking.UnpackArray(rawHeader)
+    let! rawHeader =
+        Parser.run binary input
+        |> Result.mapError (konst <| ParsingError "Invalid outer header format")
+    let! headerHash =
+        HashingSHA512.hash rawHeader
+        |> Result.mapError DecryptionSodiumError
 
-        let format = header.Value.[0].AsString()
-        if format <> "saltpack" then return! Error <| UnexpectedFormat "Wrong magic string" else
+    let magicStringParser =
+        specific stringPack "saltpack"
+        |> mapError (konst <| UnexpectedFormat "Wrong magic string")
+    let versionInfoParser =
+        specific arrayHeader 2
+        |> mapError (konst <| ParsingError "Invalid version array")
+        >>.
+            ((specific positiveFixNum 2
+            >>. specific positiveFixNum 0)
+            |> mapError (konst UnsupportedSaltpackVersion))
+    let modeParser =
+        specific positiveFixNum 0 |> mapError (konst WrongMode)
+    let ephemeralPublicKeyParser =
+        binary |> mapError (konst <| ParsingError "Invalid ephemeral key format.")
+        >>=
+            (PublicKeyEncryption.PublicKey.Import
+            >> Result.mapError (konst <| UnexpectedFormat "Ephemeral public key length is wrong")
+            >> liftResult)
+    let senderSecretBoxParser =
+        binary |> mapError (konst <| ParsingError "Invalid sender secret box format")
+    let recipientListParser =
+        let recipientKey =
+            nullPack |>> konst None
+            <|> (binary |>> (PublicKeyEncryption.PublicKey.Import >> Some))
+        let recipient =
+            specific arrayHeader 2 |> mapError (konst <| ParsingError "Invalid recipient info format")
+            >>. (recipientKey .>>. binary |> mapError (konst <| ParsingError "Invalid recipient key format"))
+        arrayHeader
+        |> mapError (konst <| ParsingError "Invalid recipient array")
+        >>= fun length -> multiple length recipient
+        |>> (Seq.mapi (fun index (r, kb) -> index, r, kb) >> Seq.toList)
+    let headerParser =
+        specific arrayHeader 6 |> mapError (konst <| ParsingError "Invalid header format")
+        >>. magicStringParser
+        >>. versionInfoParser
+        >>. modeParser
+        >>. pipe3 ephemeralPublicKeyParser senderSecretBoxParser recipientListParser tuple3
+    let! (ephemeralPublicKey, senderSecretBox, recipientList) =
+        runWithArray headerParser rawHeader
 
-        let versionInfo = header.Value.[1].AsList()
+    let! sharedSecret =
+        PublicKeyEncryption.SharedSecret.Precompute
+            (fst recipientKeyPair)
+            ephemeralPublicKey
+        |> Result.mapError DecryptionSodiumError
 
-        let majorVersion = versionInfo.[0].AsByte()
-        if majorVersion <> 2uy then return! Error UnsupportedSaltpackVersion else
-
-        let minorVersion = versionInfo.[1].AsByte()
-        if minorVersion <> 0uy then return! Error UnsupportedSaltpackVersion else
-
-        let mode = header.Value.[2].AsByte()
-        if mode <> 0uy then return! Error WrongMode else
-
-        let! ephemeralPublicKey =
-            header.Value.[3].AsBinary()
-            |> PublicKeyEncryption.PublicKey.Import
-            |> Result.mapError (konst <| UnexpectedFormat "Ephemeral public key length is wrong")
-        let senderSecretBox = header.Value.[4].AsBinary()
-        let recipientList =
-            header.Value.[5].AsList()
-            |> Seq.mapi (fun index (o : MessagePackObject) ->
-                let t = o.AsList()
-                let key =
-                    if t.[0].IsNil then None else
-                        t.[0].AsBinary()
-                        |> PublicKeyEncryption.PublicKey.Import
-                        |> Some
-                index, key, t.[1].AsBinary())
-            |> Seq.toList
-
-        let! sharedSecret =
-            PublicKeyEncryption.SharedSecret.Precompute
-                (fst recipientKeyPair)
-                ephemeralPublicKey
-            |> Result.mapError DecryptionSodiumError
-
-        let! rawPayloadKey, recipientIndex =
+    let! rawPayloadKey, recipientIndex =
+        recipientList
+        |> Seq.tryFind (fun (_, r, _) ->
+            r = Some (Ok (snd recipientKeyPair)))
+        |>> Seq.singleton
+        |> Option.defaultWith (fun _ ->
             recipientList
-            |> Seq.tryFind (fun (_, r, _) ->
-                r = Some (Ok (snd recipientKeyPair)))
-            |>> Seq.singleton
-            |> Option.defaultWith (fun _ ->
-                recipientList
-                |> Seq.filter (fun (_, b, _) -> b = None))
-            |>> fun (index, _, box) ->
-                let nonce = makeRecipientsNonce index
-                PublicKeyEncryption.decryptWithSharedSecret
-                    sharedSecret nonce box
-                |> Option.ofResult
-                |>> fun x -> x, index
-            |> Seq.tryPick id
-            |> option Ok (Error NotIntendedRecipient)
+            |> Seq.filter (fun (_, b, _) -> b = None))
+        |>> fun (index, _, box) ->
+            let nonce = makeRecipientsNonce index
+            PublicKeyEncryption.decryptWithSharedSecret
+                sharedSecret nonce box
+            |> Option.ofResult
+            |>> fun x -> x, index
+        |> Seq.tryPick id
+        |> option Ok (Error NotIntendedRecipient)
 
-        let! payloadKey =
-            rawPayloadKey
-            |> SecretKeyEncryption.Key.Import
-            |> Result.mapError (konst <| UnexpectedFormat "Payload key length is wrong")
+    let! payloadKey =
+        rawPayloadKey
+        |> SecretKeyEncryption.Key.Import
+        |> Result.mapError (konst <| UnexpectedFormat "Payload key length is wrong")
 
-        let! senderPublicKey =
-            SecretKeyEncryption.decrypt
-                payloadKey senderSecretBoxNonce senderSecretBox
+    let! senderPublicKey =
+        SecretKeyEncryption.decrypt
+            payloadKey senderSecretBoxNonce senderSecretBox
+        |> Result.mapError DecryptionSodiumError
+        >>= (PublicKeyEncryption.PublicKey.Import
+            >> Result.mapError (konst <| UnexpectedFormat "Sender public key length is wrong"))
+
+    let! authenticationKey =
+        makeAuthenticationKey
+            headerHash
+            recipientIndex
+            (fst recipientKeyPair, senderPublicKey)
+            (fst recipientKeyPair, ephemeralPublicKey)
+        |> Result.mapError DecryptionSodiumError
+
+    let write buffer =
+        try output.Write(buffer, 0, Array.length buffer) |> Ok
+        with | :? IOException as exn -> Error <| WriteError exn
+
+    let payloadParser =
+        let authenticators =
+            specific arrayHeader (List.length recipientList)
+            >>= fun l -> multiple l binary
+        specific arrayHeader 3
+        >>. pipe3 boolPack authenticators binary tuple3
+        |> mapError (konst <| ParsingError "Wrong payload format")
+
+    let rec iter index = monad.strict {
+        let! (finalFlag, authenticators : byte[][], payload : byte[]) =
+            run payloadParser input
+        let mac = authenticators.[recipientIndex]
+        let nonce = makePayloadNonce index
+
+        let! hashState =
+            HashingSHA512.State.Create()
             |> Result.mapError DecryptionSodiumError
-            >>= (PublicKeyEncryption.PublicKey.Import
-                >> Result.mapError (konst <| UnexpectedFormat "Sender public key length is wrong"))
 
-        let! authenticationKey =
-            makeAuthenticationKey
+        do!
+            seq {
                 headerHash
-                recipientIndex
-                (fst recipientKeyPair, senderPublicKey)
-                (fst recipientKeyPair, ephemeralPublicKey)
+                nonce.Get
+                if finalFlag then [| 1uy |] else [| 0uy |]
+                payload
+            }
+            |>> (HashingSHA512.hashPart hashState
+                >> Result.mapError DecryptionSodiumError)
+            |> Result.sequence
+            >>= fun _ ->
+                HashingSHA512.completeHash hashState
+                |> Result.mapError DecryptionSodiumError
+            >>= fun hash ->
+                SecretKeyAuthentication.sign authenticationKey hash
+                |> bimap DecryptionSodiumError (fun x -> x.Get |> take 32)
+            >>= fun actualMac ->
+                if actualMac = mac then Ok () else Error BadAuthenticator
+
+        let! plainText =
+            SecretKeyEncryption.decrypt payloadKey nonce payload
             |> Result.mapError DecryptionSodiumError
 
-        let write buffer =
-            try output.Write(buffer, 0, Array.length buffer) |> Ok
-            with | :? IOException as exn -> Error <| WriteError exn
+        do! write plainText
 
-        let rec iter index = monad.strict {
-            let packet = Unpacking.UnpackArray(input)
-            let finalFlag = packet.[0].AsBoolean()
-            let mac = packet.[1].AsList().[recipientIndex].AsBinary()
-            let payload = packet.[2].AsBinary()
-            let nonce = makePayloadNonce index
+        if not finalFlag then return! iter (index + 1) else return ()
+    }
 
-            let! hashState =
-                HashingSHA512.State.Create()
-                |> Result.mapError DecryptionSodiumError
+    do! iter 0
 
-            do!
-                seq {
-                    headerHash
-                    nonce.Get
-                    if finalFlag then [| 1uy |] else [| 0uy |]
-                    payload
-                }
-                |>> (HashingSHA512.hashPart hashState
-                    >> Result.mapError DecryptionSodiumError)
-                |> Result.sequence
-                >>= fun _ ->
-                    HashingSHA512.completeHash hashState
-                    |> Result.mapError DecryptionSodiumError
-                >>= fun hash ->
-                    SecretKeyAuthentication.sign authenticationKey hash
-                    |> bimap DecryptionSodiumError (fun x -> x.Get |> take 32)
-                >>= fun actualMac ->
-                    if actualMac = mac then Ok () else Error BadAuthenticator
-
-            let! plainText =
-                SecretKeyEncryption.decrypt payloadKey nonce payload
-                |> Result.mapError DecryptionSodiumError
-
-            do! write plainText
-
-            if not finalFlag then return! iter (index + 1) else return ()
-        }
-
-        do! iter 0
-
-        return
-            if senderPublicKey = ephemeralPublicKey
-            then None
-            else Some senderPublicKey
-    with exn ->
-        return! Error <| ReadError exn
+    return
+        if senderPublicKey = ephemeralPublicKey
+        then None
+        else Some senderPublicKey
 }
 
 let encrypt senderKeypair recipients (input : byte[]) =

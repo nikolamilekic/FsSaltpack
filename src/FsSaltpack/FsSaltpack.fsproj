@@ -20,6 +20,7 @@
     </AssemblyAttribute>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="MessagePackParsing.fs" />
     <Compile Include="Encryption.fs" />
     <Compile Include="Armoring.fs" />
   </ItemGroup>
