@@ -10,7 +10,6 @@ nuget Milekic.YoLo storage: symlink
 nuget GitInfo copy_local: true
 nuget Microsoft.SourceLink.GitHub copy_local: true
 nuget FsSodium prerelease
-nuget MsgPack.Cli
 nuget Expecto
 nuget Expecto.BenchmarkDotNet
 nuget Expecto.FsCheck
