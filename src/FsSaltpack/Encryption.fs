@@ -6,10 +6,10 @@ open System.Text
 open System.IO
 open Milekic.YoLo
 open FSharpPlus
-open MsgPack
 open FsSodium
 open MessagePackParsing
 open MessagePackParsing.Parser
+open MessagePackSerialization
 
 let private senderSecretBoxNonce =
     Encoding.ASCII.GetBytes("saltpack_sender_key_sbox")
@@ -99,31 +99,29 @@ let encryptTo
         })
         |> Result.sequence
 
-    let recipientsCount = encryptedPayloadKeys |> List.length
-    let header =
-        use headerStream = new MemoryStream()
-        let headerPacker = Packer.Create(headerStream)
-        headerPacker
-            .PackArrayHeader(6)
-            .PackString("saltpack")
-            .PackArray([| 2uy; 0uy |])
-            .Pack(0uy)
-            .PackBinary((snd ephemeralKeypair).Get)
-            .PackBinary(senderSecretBox)
-        |> ignore
-
-        headerPacker.PackArrayHeader recipientsCount |> ignore
-
+    let recipientsInfo =
         encryptedPayloadKeys
-        |> Seq.iter (fun (pk, encryptedPayloadKey) ->
-            headerPacker.PackArrayHeader 2 |> ignore
-            match pk with
-            | Some pk -> headerPacker.PackBinary pk.Get
-            | None -> headerPacker.PackNull()
-            |> ignore
-            headerPacker.PackBinary encryptedPayloadKey |> ignore)
+        |> Seq.map (fun (pk, encryptedPayloadKey) ->
+            Array [|
+                match pk with
+                | Some pk -> Str pk.Get
+                | None -> Null
 
-        headerStream.ToArray()
+                Str encryptedPayloadKey
+            |])
+        |> Seq.toArray
+    let header =
+        Array [|
+            Str ("saltpack" |> Encoding.UTF8.GetBytes)
+            Array [| PositiveFixNum 2uy; PositiveFixNum 0uy |]
+            PositiveFixNum 0uy
+            Str (snd ephemeralKeypair).Get
+            Str senderSecretBox
+            Array recipientsInfo
+        |]
+        |> pack
+        |> Seq.toArray
+
     let! headerHash =
         HashingSHA512.hash header |> Result.mapError EncryptionSodiumError
 
@@ -138,11 +136,10 @@ let encryptTo
             |> Result.mapError EncryptionSodiumError)
         |> Result.sequence
 
-    let run =
-        let outputPacker = Packer.Create(output, PackerCompatibilityOptions.None)
-        (fun (f : Packer -> Packer) ->
-            try f outputPacker |> ignore; Ok ()
-            with exn -> Error <| WriteError exn)
+    let save x =
+        let toWrite = pack x |> Seq.toArray
+        try output.Write(toWrite, 0, Array.length toWrite) |> ignore; Ok ()
+        with exn -> Error <| WriteError exn
 
     let inputBuffer : byte[] = Array.zeroCreate 1000000
     let read () =
@@ -152,7 +149,7 @@ let encryptTo
             Ok <| (readBytes, state)
         with | :? IOException as exn -> Error <| ReadError exn
 
-    do! run (fun packer -> packer.PackBinary header)
+    do! save (Binary header)
 
     let buffersFactory = SecretKeyEncryption.makeBuffersFactory()
     let buffers = buffersFactory.FromPlainText(inputBuffer)
@@ -188,24 +185,21 @@ let encryptTo
                 |> Result.sequence
         }
 
-        do! run <| fun packer ->
-            packer
-                .PackArrayHeader(3)
-                .Pack(doneFlag)
-                .PackArray(authenticators)
+        let payload = Array [|
+            Boolean doneFlag
+            Array <| (authenticators |> Seq.map Str |> Seq.toArray)
 
-        if doneFlag
-        then
-            let cipherTextLength = buffersFactory.GetCipherTextLength(readBytes)
-            return! run <| fun packer ->
-                packer.PackBinary(buffers.CipherText.[..cipherTextLength-1])
-        else
-            do! run <| fun packer -> packer.PackBinary(buffers.CipherText)
-            return! iter (index + 1)
+            if doneFlag then
+                let cipherTextLength = buffersFactory.GetCipherTextLength(readBytes)
+                Str buffers.CipherText.[..cipherTextLength-1]
+            else Str buffers.CipherText
+        |]
+
+        do! save payload
+        if not doneFlag then return! iter (index + 1)
     }
 
     do! iter 0
-    do! run <| fun packer -> packer.Flush(); packer.Dispose(); packer
 }
 
 type DecryptionError =
