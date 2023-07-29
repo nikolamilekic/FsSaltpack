@@ -46,7 +46,7 @@ and DecryptArgument =
 let main argv =
     printfn
         "Saltpack encryption utility. Version: %s (%s)"
-        (Metadata.getCallingAssemblyInformationalVersion())
+        Metadata.entryAssemblyInformationalVersion.Value.Value.InformationalVersion
         (DateTimeOffset.Parse(ThisAssembly.Git.CommitDate).ToString("yyyy-MM-dd"))
 
     try

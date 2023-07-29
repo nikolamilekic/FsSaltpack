@@ -2,22 +2,28 @@
   "version": 1,
   "isRoot": true,
   "tools": {
-    "fake-cli": {
-      "version": "5.20.4-alpha.1642",
-      "commands": [
-        "fake"
-      ]
-    },
     "paket": {
-      "version": "5.257.0",
+      "version": "7.0.2",
       "commands": [
         "paket"
+      ]
+    },
+    "fake-cli": {
+      "version": "5.22.0",
+      "commands": [
+        "fake"
       ]
     },
     "sourcelink": {
       "version": "3.1.1",
       "commands": [
         "sourcelink"
+      ]
+    },
+    "sleet": {
+      "version": "5.0.1",
+      "commands": [
+        "sleet"
       ]
     }
   }

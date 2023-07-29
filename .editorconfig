@@ -8,6 +8,15 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
+charset = utf-8
 
-[*.{fsproj,targets}]
+resharper_spec_flow_step_not_resolved_highlighting = none
+
+[*.{?sproj,targets,props,yml,yaml,json,proto}]
 indent_size = 2
+
+[*.sh]
+end_of_line = lf
+
+[*.{cmd,bat}]
+end_of_line = crlf

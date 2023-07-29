@@ -1,41 +1,100 @@
+#r "paket:
+source https://api.nuget.org/v3/index.json
+source https://nuget.nikolamilekic.com/index.json
+
+nuget FSharp.Core
+
+nuget FSharpPlus
+nuget Fake.Api.GitHub
+nuget Octokit
+nuget Fake.BuildServer.GitHubActions
+nuget Fake.Core.ReleaseNotes
+nuget Fake.Core.SemVer
+nuget Fake.Core.Target
+nuget Fake.DotNet.Cli
+nuget Fake.DotNet.Paket
+nuget Fake.IO.FileSystem
+nuget Fake.IO.Zip
+nuget Fake.Tools.Git
+
+nuget Milekic.YoLo
+nuget Fs1PasswordConnect prerelease //"
 #load ".fake/build.fsx/intellisense.fsx"
 
-Fake.Core.Target.initEnvironment ()
+//nuget Fake.Core.Target
+open Fake.Core.TargetOperators
 
-module CustomTargetOperators =
-    //nuget Fake.Core.Target
+let (==>) xs y = xs |> Seq.iter (fun x -> x ==> y |> ignore)
+let (?=>) xs y = xs |> Seq.iter (fun x -> x ?=> y |> ignore)
 
-    open Fake.Core.TargetOperators
+module Connect =
+    //nuget Milekic.YoLo
+    //nuget FSharpPlus
+    //nuget Fs1PasswordConnect
+    //nuget Fake.BuildServer.GitHubActions
 
-    let (==>) xs y = xs |> Seq.iter (fun x -> x ==> y |> ignore)
-    let (?=>) xs y = xs |> Seq.iter (fun x -> x ?=> y |> ignore)
+    open Fs1PasswordConnect
+    open FSharpPlus
+    open Milekic.YoLo
+    open Fake.BuildServer
+
+    monad.strict {
+        let! client =
+            ConnectClient.fromEnvironmentVariables()
+            |> Result.mapError (fun _ -> printfn "Connect client not configured")
+
+        printfn "Injecting secrets into environment variables using Connect"
+
+        let ghActions = GitHubActions.detect ()
+        for u, r in client.InjectIntoEnvironmentVariables() |> Async.RunSynchronously do
+            match r with
+            | Ok (s : string) ->
+                printfn $"Updated environment variable {u}"
+                if ghActions then
+                    //See https://github.com/actions/toolkit/blob/4fbc5c941a57249b19562015edbd72add14be93d/packages/core/src/command.ts#L23
+                    let escaped =
+                        s
+                            .Replace("%", "%25")
+                            .Replace("\r", "%0D")
+                            .Replace("\n", "%0A")
+                    printfn $"::add-mask::{escaped}"
+            | Error e -> printfn $"Failed to update environment variable {u}: {e}"
+        printfn "Secret injection done"
+
+        return ()
+    }
+    |> ignore
 
 module FinalVersion =
     //nuget Fake.IO.FileSystem
+    //nuget Fake.Core.SemVer
+    //nuget Milekic.YoLo
 
-    open System.Text.RegularExpressions
     open Fake.IO
     open Fake.IO.Globbing.Operators
     open Fake.Core
+    open Milekic.YoLo
 
-    let pathToAssemblyInfoFile =
-        lazy
-        !! "src/*/obj/Release/**/*.AssemblyInfo.fs"
-        |> Seq.head
+    let getFinalVersionFromAssemblyInfo x =
+        match File.readAsString x with
+        | Regex "AssemblyInformationalVersionAttribute\(\"(.+)\"\)" [ version ] ->
+            Some (SemVer.parse version)
+        | _ -> None
 
-    let (|Regex|_|) pattern input =
-        let m = Regex.Match(input, pattern)
-        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-        else None
+    let getFinalVersionForProject project =
+        let assemblyInfoFileGlob =
+            [ Path.getDirectory project; "obj/Release/**/*.AssemblyInfo.?s" ]
+            |> List.fold Path.combine ""
+        !!assemblyInfoFileGlob
+        |> Seq.tryHead
+        |> Option.bind getFinalVersionFromAssemblyInfo
 
     let finalVersion =
         lazy
-        pathToAssemblyInfoFile.Value
-        |> File.readAsString
-        |> function
-            | Regex "AssemblyInformationalVersionAttribute\(\"(.+)\"\)>]" [ version ] ->
-                SemVer.parse version
-            | _ -> failwith "Could not parse assembly version"
+        !! "src/*/obj/Release/**/*.AssemblyInfo.?s"
+        |> Seq.head
+        |> getFinalVersionFromAssemblyInfo
+        |> Option.defaultWith (fun _ -> failwith "Could not parse assembly version")
 
 module ReleaseNotesParsing =
     //nuget Fake.Core.ReleaseNotes
@@ -50,53 +109,67 @@ module ReleaseNotesParsing =
         |> String.concat Environment.NewLine
 
 module Clean =
-    //nuget FSharpPlus
     //nuget Fake.IO.FileSystem
 
     open Fake.IO
     open Fake.IO.Globbing.Operators
     open Fake.Core
-    open FSharpPlus
 
     Target.create "Clean" <| fun _ ->
-        lift2 tuple2 [|"src"; "tests"|] [|"bin"; "obj"|]
-        >>= fun (x,y) -> !!(sprintf "%s/**/%s" x y) |> toSeq
-        |> plus ([|"bin"; "obj"|] |> toSeq)
+        Seq.allPairs [|"src"; "tests"|] [|"bin"; "obj"|]
+        |> Seq.collect (fun (x, y) -> !! $"{x}/**/{y}")
+        |> Seq.append [ "publish"; "testResults" ]
         |> Shell.deleteDirs
-
-        Shell.cleanDir "publish"
 
 module Build =
     //nuget Fake.DotNet.Cli
-    //nuget Fake.BuildServer.AppVeyor
     //nuget Fake.IO.FileSystem
 
     open Fake.DotNet
     open Fake.Core
-    open Fake.Core.TargetOperators
-    open Fake.BuildServer
     open Fake.IO.Globbing.Operators
-
-    open FinalVersion
 
     let projectToBuild = !! "*.sln" |> Seq.head
 
-    Target.create "Build" <| fun _ ->
-        DotNet.build id projectToBuild
+    Target.create "Build" <| fun _ -> DotNet.build id projectToBuild
+    [ "Clean" ] ?=> "Build"
 
-        if AppVeyor.detect() then
-            let finalVersion = finalVersion.Value
-            let appVeyorVersion =
-                sprintf
-                    "%d.%d.%d.%s"
-                    finalVersion.Major
-                    finalVersion.Minor
-                    finalVersion.Patch
-                    AppVeyor.Environment.BuildNumber
+    Target.create "Rebuild" ignore
+    [ "Clean"; "Build" ] ==> "Rebuild"
 
-            AppVeyor.updateBuild (fun p -> { p with Version = appVeyorVersion })
+module Test =
+    //nuget Fake.DotNet.Cli
+    //nuget Fake.IO.FileSystem
 
-    "Clean" ?=> "Build"
+    open System.IO
+    open Fake.IO
+    open Fake.Core
+    open Fake.DotNet
+    open Fake.IO.Globbing.Operators
+
+    let testProjects = !!"tests/*/*.?sproj"
+
+    Target.create "Test" <| fun _ ->
+        let testException =
+            testProjects
+            |> Seq.map (fun project ->
+                let project = Path.getDirectory project
+                try
+                    DotNet.test
+                        (fun x ->
+                            { x with
+                                NoBuild = true
+                                Configuration = DotNet.BuildConfiguration.Release })
+                        project
+                    None
+                with e -> Some e)
+            |> Seq.tryPick id
+
+        match testException with
+        | None -> ()
+        | Some e -> raise e
+
+    [ "Build" ] ==> "Test"
 
 module Pack =
     //nuget Fake.DotNet.Cli
@@ -106,7 +179,6 @@ module Pack =
     open Fake.Core
     open Fake.IO.Globbing.Operators
 
-    open CustomTargetOperators
     open ReleaseNotesParsing
 
     let projectToPack = !! "*.sln" |> Seq.head
@@ -118,174 +190,207 @@ module Pack =
                 { p with
                     OutputPath = Some (__SOURCE_DIRECTORY__ + "/publish")
                     NoBuild = true
+                    NoRestore = true
                     MSBuildParams =
                         { p.MSBuildParams with
                             Properties =
                                 newBuildProperties @ p.MSBuildParams.Properties }})
             projectToPack
 
-    [ "Clean"; "Build" ] ==> "Pack"
+    [ "Build" ] ==> "Pack"
+
+    Target.create "Repack" ignore
+    [ "Clean"; "Pack" ] ==> "Repack"
 
 module Publish =
-    //nuget FSharpPlus
     //nuget Fake.DotNet.Cli
     //nuget Fake.IO.FileSystem
     //nuget Fake.IO.Zip
+    //nuget Milekic.YoLo
 
     open System.IO
-    open System.Text.RegularExpressions
     open Fake.DotNet
     open Fake.Core
     open Fake.IO
     open Fake.IO.Globbing.Operators
     open Fake.IO.FileSystemOperators
-    open FSharpPlus
+    open Milekic.YoLo
 
     open FinalVersion
-    open CustomTargetOperators
 
-    let (|Regex|_|) pattern input =
-        let m = Regex.Match(input, pattern)
-        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-        else None
+    let projectsToPublish = !!"src/*/*.?sproj"
 
-    let runtimesToTarget = [ "osx-x64"; "win-x64"; "linux-arm"; "linux-x64" ]
+    type ProjectInfo = {
+        Path : string
+        OutputType : string option
+        ProjectType : string option
+        TargetFrameworks : string list
+        BundleMacOSApp : string option
+    }
 
-    let projectsToPublish =
-        !! "src/*/*.fsproj"
-        |> toSeq
-        |>> fun projectFile ->
-            let contents = File.readAsString projectFile
-            let outputType =
-                match contents with
+    let parse project =
+        let projectContents = File.readAsString project
+        {
+            Path = project
+            OutputType =
+                match projectContents with
                 | Regex "<OutputType>(.+)<\/OutputType>" [ outputType ] ->
                     Some (outputType.ToLower())
                 | _ -> None
-            projectFile, contents, outputType
-        |> Seq.filter (fun (_, _, outputType) -> outputType = Some "exe")
-        >>= fun (projectFile, contents, _) ->
-            match contents with
-            | Regex "<TargetFramework.*>(.+)<\/TargetFramework" [ frameworks ] ->
-                let projectDirectory = Path.GetDirectoryName projectFile
-                frameworks
-                |> String.split [";"]
-                |> Seq.filter (fun x -> x.StartsWith "netcoreapp" || x = "net5.0")
-                >>= fun framework ->
-                    let custom =
-                        match framework with
-                        | x when x.StartsWith "netcoreapp3" ->
-                            Some "-p:PublishSingleFile=true -p:PublishTrimmed=true"
-                        | "net5.0" ->
-                            Some "-p:PublishSingleFile=true -p:PublishTrimmed=true -p:IncludeNativeLibrariesForSelfExtract=true"
-                        | _ -> None
-                    runtimesToTarget
-                    |> List.toSeq
-                    |>> fun runtime ->
-                        projectDirectory,
-                        Some framework,
-                        Some runtime,
-                        custom
-            | _ -> Seq.empty
+            ProjectType =
+                match projectContents with
+                | Regex "<Project Sdk=\"(.+)\">" [ projectType ] ->
+                    Some (projectType.ToLower())
+                | _ -> None
+            TargetFrameworks =
+                match projectContents with
+                | Regex "<TargetFramework.?>(.+)<\/TargetFramework" [ frameworks ] ->
+                    frameworks |> String.splitStr ";"
+                | _ -> []
+            BundleMacOSApp =
+                match projectContents with
+                | Regex "<CFBundleName>(.+)<\/CFBundleName>" [ bundleName ] ->
+                    Some bundleName
+                | _ -> None
+        }
 
-    Target.create "Publish" <| fun _ ->
-        for (project, framework, runtime, custom) in projectsToPublish do
-            project
-            |> DotNet.publish (fun p ->
-                { p with
-                    Framework = framework
-                    Runtime = runtime
-                    Common = { p.Common with CustomParams = custom } } )
+    let publish (targetRuntimes : string seq) =
+        let projectsToPublish =
+            projectsToPublish
+            |> Seq.map parse
+            |> Seq.filter (fun { ProjectType = projectType; OutputType = outputType } ->
+                projectType = Some "microsoft.net.sdk.web" ||
+                outputType = Some "exe" ||
+                outputType = Some "winexe")
 
+        for project in projectsToPublish do
+        for framework in project.TargetFrameworks do
+        for runtime in targetRuntimes do
             let sourceFolder =
                 seq {
-                    project |> Some
-                    "bin/Release" |> Some
+                    (Path.getDirectory project.Path)
+                    "bin/Release"
                     framework
                     runtime
-                    "publish" |> Some
+                    "publish"
                 }
-                |> Seq.choose id
                 |> Seq.fold (</>) ""
 
             let targetFolder =
                 seq {
-                    "publish" |> Some
-                    Path.GetFileName project |> Some
+                    "publish"
+                    Path.GetFileNameWithoutExtension project.Path
                     framework
                     runtime
                 }
-                |> Seq.choose id
                 |> Seq.fold (</>) ""
 
-            Shell.copyDir targetFolder sourceFolder (konst true)
+            match runtime, project.BundleMacOSApp with
+            | "osx-x64", Some bundle ->
+                let customParameters = "-t:BundleApp -p:PublishTrimmed=true --self-contained"
+
+                project.Path
+                |> DotNet.publish (fun p ->
+                    { p with
+                        Framework = Some framework
+                        Runtime = Some runtime
+                        Common = { p.Common with CustomParams = Some customParameters } } )
+
+                let sourceFolder = sourceFolder </> bundle + ".app"
+                let targetFolder = targetFolder </> bundle + ".app"
+                Shell.copyDir targetFolder sourceFolder (fun _ -> true)
+            | _ ->
+                let customParameters = "-p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained"
+
+                project.Path
+                |> DotNet.publish (fun p ->
+                    { p with
+                        Framework = Some framework
+                        Runtime = Some runtime
+                        Common = { p.Common with CustomParams = Some customParameters } } )
+
+                Shell.copyDir targetFolder sourceFolder (fun _ -> true)
 
             let zipFileName =
                 seq {
-                    sprintf
-                        "%s.%s"
-                        (Path.GetFileName project)
-                        (finalVersion.Value.NormalizeToShorter()) |> Some
+                    Path.GetFileNameWithoutExtension project.Path
+                    finalVersion.Value.NormalizeToShorter()
                     framework
                     runtime
                 }
-                |> Seq.choose id
                 |> String.concat "."
+
+            let filesToPublish =
+                !! (targetFolder </> "**")
+                -- "**/*.xml"
+                -- "**/*.pdb"
 
             Zip.zip
                 targetFolder
-                (sprintf "publish/%s.zip" zipFileName)
-                !! (targetFolder </> "**")
+                $"publish/{zipFileName}.zip"
+                filesToPublish
 
-    [ "Clean"; "Build" ] ==> "Publish"
+    Target.create "PublishWindows" <| fun _ -> publish [ "win-x64" ]
+    Target.create "PublishMacOS" <| fun _ -> publish [ "osx-x64" ]
+    Target.create "PublishLinux" <| fun _ -> publish [ "linux-arm"; "linux-x64" ]
 
-module Test =
-    //nuget FSharpPlus
-    //nuget Fake.IO.FileSystem
-    //nuget Fake.DotNet.Testing.Expecto
-
-    open System.IO
-    open Fake.Core
-    open Fake.Core.TargetOperators
-    open Fake.IO.Globbing.Operators
-    open Fake.DotNet.Testing
-    open FSharpPlus
-
-    Target.create "Test" <| fun _ ->
-        !! "tests/**/*.fsproj"
-        |> toSeq
-        >>= fun projectPath ->
-            let projectName = Path.GetFileNameWithoutExtension projectPath
-            !! (sprintf "tests/%s/bin/release/**/%s.dll" projectName projectName)
-            |> toSeq
-        |> Expecto.run id
-    "Build" ==> "Test"
+    [ "Clean"; "Test" ] ?=> "PublishWindows"
+    [ "Clean"; "Test" ] ?=> "PublishMacOS"
+    [ "Clean"; "Test" ] ?=> "PublishLinux"
 
 module TestSourceLink =
-    //nuget FSharpPlus
     //nuget Fake.IO.FileSystem
     //nuget Fake.DotNet.Cli
 
     open Fake.Core
-    open Fake.Core.TargetOperators
     open Fake.IO.Globbing.Operators
     open Fake.DotNet
-    open FSharpPlus
 
     Target.create "TestSourceLink" <| fun _ ->
         !! "publish/*.nupkg"
-        |> flip Seq.iter <| fun p ->
-            DotNet.exec
-                id
-                "sourcelink"
-                (sprintf "test %s" p)
-            |> fun r -> if not r.OK then failwithf "Source link check for %s failed." p
+        |> Seq.iter (fun p ->
+            DotNet.exec id "sourcelink" $"test {p}"
+            |> fun r -> if not r.OK then failwith $"Source link check for {p} failed.")
 
-    "Pack" ==> "TestSourceLink"
+    [ "Pack" ] ==> "TestSourceLink"
+
+module BisectHelper =
+    //nuget Fake.DotNet.Cli
+
+    open Fake.Core
+    open Fake.DotNet
+    open System.Diagnostics
+
+    Target.create "BisectHelper" <| fun c ->
+        let project =
+            match c.Context.Arguments |> Seq.tryHead with
+            | None -> failwith "Need to specify the project to bisect"
+            | Some x -> x
+
+        let exitWith i =
+            printfn $"Exiting with exit code {i}"
+            exit i
+
+        let rec readInput() : unit =
+            printfn "Enter g for good, b for bad, s for skip and a to abort"
+            match System.Console.ReadLine() with
+            | "g" -> exitWith 0
+            | "b" -> exitWith 1
+            | "s" -> exitWith 125
+            | "a" -> exitWith 128
+            | _ -> readInput()
+
+        try
+            DotNet.build id project
+            Process.Start("dotnet", $"run -p {project}").WaitForExit()
+        with _ -> printfn "Build failed"
+
+        readInput()
 
 module UploadArtifactsToGitHub =
     //nuget Fake.Api.GitHub
     //nuget Fake.IO.FileSystem
-    //nuget Fake.BuildServer.AppVeyor
+    //nuget Fake.BuildServer.GitHubActions
 
     open System.IO
     open Fake.Core
@@ -293,17 +398,19 @@ module UploadArtifactsToGitHub =
     open Fake.IO.Globbing.Operators
     open Fake.BuildServer
 
-    open CustomTargetOperators
     open FinalVersion
     open ReleaseNotesParsing
 
     let productName = !! "*.sln" |> Seq.head |> Path.GetFileNameWithoutExtension
     let gitOwner = "nikolamilekic"
 
-    Target.create "UploadArtifactsToGitHub" <| fun _ ->
-        let finalVersion = finalVersion.Value
-        if AppVeyor.detect() && finalVersion.PreRelease.IsNone then
-            let token = Environment.environVarOrFail "GitHubToken"
+    Target.create "CreateGitHubRelease" <| fun _ ->
+        let targetCommit =
+            if GitHubActions.detect() then GitHubActions.Environment.Sha
+            else ""
+        if targetCommit <> "" then
+            let finalVersion = finalVersion.Value
+            let token = Environment.environVarOrFail "GITHUB_TOKEN"
             GitHub.createClientWithToken token
             |> GitHub.createRelease
                 gitOwner
@@ -311,55 +418,145 @@ module UploadArtifactsToGitHub =
                 (finalVersion.NormalizeToShorter())
                 (fun o ->
                     { o with
+                        Draft = false
                         Body = releaseNotes.Value
                         Prerelease = (finalVersion.PreRelease <> None)
-                        TargetCommitish = AppVeyor.Environment.RepoCommit })
-            |> GitHub.uploadFiles (!! "publish/*.nupkg" ++ "publish/*.zip")
-            |> GitHub.publishDraft
+                        TargetCommitish = targetCommit })
+            |> Async.Ignore
             |> Async.RunSynchronously
 
-    [ "Pack"; "Publish"; "Test"; "TestSourceLink" ] ==> "UploadArtifactsToGitHub"
+    [
+        "Pack"
+        "PublishWindows"
+        "PublishMacOS"
+        "PublishLinux"
+        "Test"
+        "TestSourceLink"
+    ] ?=> "CreateGitHubRelease"
+
+    Target.create "UploadArtifactsToGitHub" <| fun _ ->
+        let targetCommit =
+            if GitHubActions.detect() then GitHubActions.Environment.Sha
+            else ""
+        if targetCommit <> "" then
+            let token = Environment.environVarOrFail "GITHUB_TOKEN"
+            GitHub.createClientWithToken token
+            |> fun client -> async {
+                let! client = client
+                let rec retry attemptsRemaining : Async<GitHub.Release> = async {
+                    if attemptsRemaining = 0 then
+                        return failwith $"Could not find release for commit {targetCommit}"
+                    else
+
+                    let! releases =
+                        client.Repository.Release.GetAll(gitOwner, productName)
+                        |> Async.AwaitTask
+                    let releaseMaybe =
+                        releases
+                        |> Seq.tryFind (fun r -> r.TargetCommitish = targetCommit)
+
+                    match releaseMaybe with
+                    | Some release ->
+                        return {
+                            Client = client
+                            Owner = gitOwner
+                            Release = release
+                            RepoName = productName
+                        }
+                    | None ->
+                        do! Async.Sleep 3000
+                        return! retry (attemptsRemaining - 1)
+                }
+                return! retry 5
+            }
+            |> GitHub.uploadFiles (
+                !! "publish/*.nupkg"
+                ++ "publish/*.snupkg"
+                ++ "publish/*.zip")
+            |> Async.Ignore
+            |> Async.RunSynchronously
+
+    [
+        "Pack"
+        "PublishWindows"
+        "PublishMacOS"
+        "PublishLinux"
+        "Test"
+        "TestSourceLink"
+        "CreateGitHubRelease"
+    ] ?=> "UploadArtifactsToGitHub"
 
 module UploadPackageToNuget =
     //nuget Fake.DotNet.Paket
-    //nuget Fake.BuildServer.AppVeyor
+    //nuget Fake.BuildServer.GitHubActions
 
     open Fake.Core
     open Fake.DotNet
     open Fake.BuildServer
 
     open FinalVersion
-    open CustomTargetOperators
 
     Target.create "UploadPackageToNuget" <| fun _ ->
-        if AppVeyor.detect() && finalVersion.Value.PreRelease.IsNone then
-            Paket.push <| fun p ->
-                { p with
+        if GitHubActions.detect() = false || finalVersion.Value.PreRelease.IsSome then () else
+
+        match Environment.environVarOrNone("NUGET_KEY") with
+        | Some apiKey ->
+            Paket.push <| fun p -> {
+                p with
+                    ApiKey = apiKey
                     ToolType = ToolType.CreateLocalTool()
                     WorkingDir = __SOURCE_DIRECTORY__ + "/publish" }
+        | None -> ()
 
-    [ "Pack"; "Test"; "TestSourceLink" ] ==> "UploadPackageToNuget"
+    [ "Pack" ] ==> "UploadPackageToNuget"
+
+    [
+        "UploadArtifactsToGitHub"
+        "Test"
+        "TestSourceLink"
+    ] ?=> "UploadPackageToNuget"
+
+module UploadPackageWithSleet =
+    //nuget Fake.DotNet.Cli
+    //nuget Fake.BuildServer.GitHubActions
+
+    open Fake.Core
+    open Fake.DotNet
+    open Fake.BuildServer
+    open System.IO
+
+    let publishDirectory = __SOURCE_DIRECTORY__ + "/publish"
+
+    Target.create "UploadPackageWithSleet" <| fun _ ->
+        if (GitHubActions.detect() = false ||
+            Directory.Exists(publishDirectory) = false) ||
+            Environment.environVarOrNone "SLEET_FEED_TYPE" |> Option.isNone then () else
+
+        DotNet.exec id "sleet" $"push {publishDirectory}"
+        |> fun r -> if not r.OK then failwith $"Failed to push to Sleet. Errors: {r.Errors}"
+
+    [ "Pack"  ] ==> "UploadPackageWithSleet"
+
+    [
+        "UploadArtifactsToGitHub"
+        "Test"
+        "TestSourceLink"
+    ] ?=> "UploadPackageWithSleet"
 
 module Release =
     //nuget Fake.Tools.Git
+    //nuget Milekic.YoLo
 
-    open System.Text.RegularExpressions
     open Fake.IO
     open Fake.IO.Globbing.Operators
     open Fake.Core
     open Fake.Tools
-
-    open CustomTargetOperators
+    open Milekic.YoLo
 
     let pathToThisAssemblyFile =
         lazy
-        !! "src/*/obj/Release/**/ThisAssembly.GitInfo.g.fs"
+        !! "src/*/obj/Release/**/ThisAssembly.GitInfo.g.?s"
         |> Seq.head
-
-    let (|Regex|_|) pattern input =
-        let m = Regex.Match(input, pattern)
-        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-        else None
 
     let gitHome =
         lazy
@@ -372,25 +569,37 @@ module Release =
     Target.create "Release" <| fun _ ->
         Git.CommandHelper.directRunGitCommandAndFail
             ""
-            (sprintf "push -f %s HEAD:release" gitHome.Value)
+            $"push -f {gitHome.Value} HEAD:release"
 
-    [ "Clean"; "Build"; "Test" ] ==> "Release"
+    [ "Clean"; "Build"; "Test"; "TestSourceLink" ] ==> "Release"
 
-module AppVeyor =
+module GitHubActions =
     open Fake.Core
 
-    open CustomTargetOperators
+    Target.create "BuildAction" ignore
+    [ "Clean"; "Build"; "Test"; "TestSourceLink" ] ==> "BuildAction"
 
-    Target.create "AppVeyor" ignore
-    [ "UploadArtifactsToGitHub" ]
-    ==> "AppVeyor"
+    Target.create "ReleaseAction" ignore
+    [
+        "BuildAction"
+        "Pack"
+        "PublishLinux"
+        "CreateGitHubRelease"
+        "UploadArtifactsToGitHub"
+        "UploadPackageToNuget"
+        "UploadPackageWithSleet"
+    ] ==> "ReleaseAction"
+
+    Target.create "PublishWindowsAction" ignore
+    [ "PublishWindows"; "UploadArtifactsToGitHub" ] ==> "PublishWindowsAction"
+
+    Target.create "PublishMacOSAction" ignore
+    [ "PublishMacOS"; "UploadArtifactsToGitHub" ] ==> "PublishMacOSAction"
 
 module Default =
     open Fake.Core
 
-    open CustomTargetOperators
-
     Target.create "Default" ignore
     [ "Build"; "Test" ] ==> "Default"
 
-    Target.runOrDefault "Default"
+    Target.runOrDefaultWithArguments "Default"

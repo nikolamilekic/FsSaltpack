@@ -6,6 +6,7 @@ open System.Text
 open System.IO
 open Milekic.YoLo
 open FSharpPlus
+open FSharpPlus.Data
 open FsSodium
 open MessagePackParsing
 open MessagePackParsing.Parser
@@ -82,7 +83,7 @@ let encryptTo
             (snd identityKeypair).Get
         |> Result.mapError EncryptionSodiumError
     let recipients = recipients |> Seq.toArray
-    let! encryptedPayloadKeys =
+    let! (encryptedPayloadKeys : (PublicKeyEncryption.PublicKey option * byte array) list) =
         recipients
         |> Seq.mapi (fun index (recipientType, recipientPublicKey) -> monad.strict {
             let nonce = makeRecipientsNonce index
@@ -97,7 +98,8 @@ let encryptTo
             | Public -> return Some recipientPublicKey, encryptedPayloadKey
             | Anonymous -> return None, encryptedPayloadKey
         })
-        |> Result.sequence
+        |> List.ofSeq
+        |> List.sequence
 
     let recipientsInfo =
         encryptedPayloadKeys
@@ -125,7 +127,7 @@ let encryptTo
     let! headerHash =
         HashingSHA512.hash header |> Result.mapError EncryptionSodiumError
 
-    let! recipientAuthenticationKeys =
+    let! (recipientAuthenticationKeys : SecretKeyAuthentication.Key list) =
         recipients
         |> Seq.mapi (fun index (_, recipientKey) ->
             makeAuthenticationKey
@@ -134,7 +136,8 @@ let encryptTo
                 (fst identityKeypair, recipientKey)
                 (fst ephemeralKeypair, recipientKey)
             |> Result.mapError EncryptionSodiumError)
-        |> Result.sequence
+        |> List.ofSeq
+        |> List.sequence
 
     let save x =
         let toWrite = pack x |> Seq.toArray
@@ -182,7 +185,8 @@ let encryptTo
                 |> Seq.map (fun key ->
                     SecretKeyAuthentication.sign key authenticatorHash
                     |> bimap EncryptionSodiumError (fun x -> x.Get |> take 32))
-                |> Result.sequence
+                |> List.ofSeq
+                |> List.sequence
         }
 
         let payload = Array [|
@@ -334,7 +338,8 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
             }
             |>> (HashingSHA512.hashPart hashState
                 >> Result.mapError DecryptionSodiumError)
-            |> Result.sequence
+            |> List.ofSeq
+            |> List.sequence
             >>= fun _ ->
                 HashingSHA512.completeHash hashState
                 |> Result.mapError DecryptionSodiumError

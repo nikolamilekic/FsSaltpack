@@ -1,3 +1,7 @@
+## New in 0.4 (Unreleased)
+* Switched to custom message parsing
+* Switched to .NET 6
+
 ## New in 0.3 (Released 2020/12/14)
 * Removed endianness compatibility
 

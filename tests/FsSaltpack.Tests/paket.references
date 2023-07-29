@@ -6,3 +6,5 @@ Expecto
 Expecto.BenchmarkDotNet
 Expecto.FsCheck
 Unquote
+Microsoft.NET.Test.Sdk
+YoloDev.Expecto.TestSdk

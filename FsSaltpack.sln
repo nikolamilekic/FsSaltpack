@@ -13,6 +13,24 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsSaltpack.Tests", "tests\F
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "saltpack", "src\saltpack\saltpack.fsproj", "{EB70905D-2946-4F24-823C-10F8CB51E039}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8C4C76C4-18BC-41D7-82B7-4480C73829C0}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitattributes = .gitattributes
+		.gitignore = .gitignore
+		build.cmd = build.cmd
+		build.fsx = build.fsx
+		build.sh = build.sh
+		FsSaltpack.sln = FsSaltpack.sln
+		GitInfo.txt = GitInfo.txt
+		global.json = global.json
+		paket.dependencies = paket.dependencies
+		paket.lock = paket.lock
+		README.md = README.md
+		RELEASE_NOTES.md = RELEASE_NOTES.md
+		.config\dotnet-tools.json = .config\dotnet-tools.json
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
