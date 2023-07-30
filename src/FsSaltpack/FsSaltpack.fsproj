@@ -3,14 +3,11 @@
   <PropertyGroup>
     <Description>F# saltpack implementation. See saltpack.org</Description>
     <Authors>Nikola Milekic</Authors>
-    <RepositoryUrl>https://github.com/nikolamilekic/FsSaltpack/</RepositoryUrl>
     <TargetFramework>net6.0</TargetFramework>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/nikolamilekic/FsSaltpack</PackageProjectUrl>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DebugType>embedded</DebugType>
-    <ContinuousIntegrationBuild Condition="'$(APPVEYOR)' == 'true'">true</ContinuousIntegrationBuild>
+    <Copyright>Copyright © $([System.DateTime]::Now.Year) Nikola Milekic</Copyright>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
