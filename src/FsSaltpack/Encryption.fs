@@ -4,6 +4,7 @@ module FsSaltpack.Encryption
 open System
 open System.Text
 open System.IO
+open System.Threading
 open Milekic.YoLo
 open FSharpPlus
 open FSharpPlus.Data
@@ -15,19 +16,19 @@ open MessagePackSerialization
 let private senderSecretBoxNonce =
     Encoding.ASCII.GetBytes("saltpack_sender_key_sbox")
     |> SecretKeyEncryption.Nonce.Import
-    |> Result.failOnError ("Could not import sender secret box nonce")
+    |> Result.failOnError "Could not import sender secret box nonce"
 
 let private makeRecipientsNonce index =
     Encoding.ASCII.GetBytes("saltpack_recipsb")
     ++ (index |> uint64 |> toBytesBE)
     |> PublicKeyEncryption.Nonce.Import
-    |> Result.failOnError ("Could not import recipients nonce")
+    |> Result.failOnError "Could not import recipients nonce"
 
 let private makePayloadNonce index =
     Encoding.ASCII.GetBytes("saltpack_ploadsb")
     ++ (index |> uint64 |> toBytesBE)
     |> SecretKeyEncryption.Nonce.Import
-    |> Result.failOnError ("Could not import payload nonce")
+    |> Result.failOnError "Could not import payload nonce"
 
 type RecipientType = Public | Anonymous
 
@@ -40,13 +41,13 @@ let private makeAuthenticationKey
     let rawNonce =
         (headerHash |> take 16)
         ++ (index |> uint64 |> toBytesBE)
-    rawNonce.[15] <- rawNonce.[15] &&& 0xfeuy
+    rawNonce[15] <- rawNonce[15] &&& 0xfeuy
     let! encryptedZerosIdentity =
         let nonce =
             PublicKeyEncryption.Nonce.Import rawNonce
             |> Result.failOnError "Could not import identity nonce"
         uncurry PublicKeyEncryption.encrypt keyPair1 nonce zeros
-    rawNonce.[15] <- rawNonce.[15] ||| 0x01uy
+    rawNonce[15] <- rawNonce[15] ||| 0x01uy
     let! encryptedZerosEphemeral =
         let nonce =
             PublicKeyEncryption.Nonce.Import rawNonce
@@ -58,13 +59,14 @@ let private makeAuthenticationKey
         |> HashingSHA512.hash
         |>> (take 32
             >> SecretKeyAuthentication.Key.Import
-            >> Result.failOnError ("Could not import authentication key"))
+            >> Result.failOnError "Could not import authentication key")
 }
 
-type EncryptionError =
-    | EncryptionSodiumError of SodiumError
-    | ReadError of IOException
-    | WriteError of Exception
+let private plainTextBufferLength = 1000000 // saltpack spec
+let private cipherTextBufferLength = SecretKeyEncryption.getCipherTextLength plainTextBufferLength
+let private plainTextBuffer = new ThreadLocal<byte[]>(fun () -> Array.zeroCreate plainTextBufferLength)
+let private cipherTextBuffer = new ThreadLocal<byte[]>(fun () -> Array.zeroCreate cipherTextBufferLength)
+
 let encryptTo
     senderKeypair
     (recipients : _ seq)
@@ -72,16 +74,13 @@ let encryptTo
     (output : Stream) = monad.strict {
 
     let payloadKey = SecretKeyEncryption.Key.Generate()
-    let! ephemeralKeypair =
-        PublicKeyEncryption.SecretKey.Generate()
-        |> Result.mapError EncryptionSodiumError
+    let! ephemeralKeypair = PublicKeyEncryption.SecretKey.Generate()
     let identityKeypair = senderKeypair |> Option.defaultValue ephemeralKeypair
     let! senderSecretBox =
         SecretKeyEncryption.encrypt
             payloadKey
             senderSecretBoxNonce
             (snd identityKeypair).Get
-        |> Result.mapError EncryptionSodiumError
     let recipients = recipients |> Seq.toArray
     let! (encryptedPayloadKeys : (PublicKeyEncryption.PublicKey option * byte array) list) =
         recipients
@@ -93,7 +92,6 @@ let encryptTo
                     recipientPublicKey
                     nonce
                     payloadKey.Get
-                |> Result.mapError EncryptionSodiumError
             match recipientType with
             | Public -> return Some recipientPublicKey, encryptedPayloadKey
             | Anonymous -> return None, encryptedPayloadKey
@@ -124,8 +122,7 @@ let encryptTo
         |> pack
         |> Seq.toArray
 
-    let! headerHash =
-        HashingSHA512.hash header |> Result.mapError EncryptionSodiumError
+    let! headerHash = HashingSHA512.hash header
 
     let! (recipientAuthenticationKeys : SecretKeyAuthentication.Key list) =
         recipients
@@ -134,57 +131,43 @@ let encryptTo
                 headerHash
                 index
                 (fst identityKeypair, recipientKey)
-                (fst ephemeralKeypair, recipientKey)
-            |> Result.mapError EncryptionSodiumError)
+                (fst ephemeralKeypair, recipientKey))
         |> List.ofSeq
         |> List.sequence
 
     let save x =
         let toWrite = pack x |> Seq.toArray
-        try output.Write(toWrite, 0, Array.length toWrite) |> ignore; Ok ()
-        with exn -> Error <| WriteError exn
+        output.Write(toWrite, 0, Array.length toWrite)
 
-    let inputBuffer : byte[] = Array.zeroCreate 1000000
     let read () =
-        try
-            let readBytes = input.Read(inputBuffer, 0, 1000000)
-            let state = input.Position >= input.Length
-            Ok <| (readBytes, state)
-        with | :? IOException as exn -> Error <| ReadError exn
+        let readBytes = input.Read(plainTextBuffer.Value, 0, plainTextBufferLength)
+        let state = input.Position >= input.Length
+        readBytes, state
 
-    do! save (Binary header)
+    save (Binary header)
 
-    let buffersFactory = SecretKeyEncryption.makeBuffersFactory()
-    let buffers = buffersFactory.FromPlainText(inputBuffer)
     let encrypt nonce =
-        SecretKeyEncryption.encryptTo payloadKey nonce buffers
-        >> Result.mapError EncryptionSodiumError
+        SecretKeyEncryption.encryptTo payloadKey nonce (PlainText plainTextBuffer.Value) (CipherText cipherTextBuffer.Value)
 
     let rec iter index = monad.strict {
-        let! (readBytes, doneFlag) = read()
+        let readBytes, doneFlag = read()
+        let cipherTextLength = SecretKeyEncryption.getCipherTextLength readBytes
         let nonce = makePayloadNonce index
         do! encrypt nonce readBytes
         let! authenticators = monad.strict {
-            let! hashState =
-                HashingSHA512.State.Create()
-                |> Result.mapError EncryptionSodiumError
-            let hpl i =
-                HashingSHA512.hashPartWithLength hashState i
-                >> Result.mapError EncryptionSodiumError
+            let! hashState = HashingSHA512.State.Create()
+            let hpl i = HashingSHA512.hashPartWithLength hashState i
             let hp i = hpl i (Array.length i)
             do! hp headerHash
             do! hp nonce.Get
             do! hp <| if doneFlag then [| 1uy |] else [| 0uy |]
-            let cipherTextLength = buffersFactory.GetCipherTextLength readBytes
-            do! hpl buffers.CipherText cipherTextLength
-            let! authenticatorHash =
-                HashingSHA512.completeHash hashState
-                |> Result.mapError EncryptionSodiumError
+            do! hpl cipherTextBuffer.Value cipherTextLength
+            let! authenticatorHash = HashingSHA512.completeHash hashState
             return!
                 recipientAuthenticationKeys
                 |> Seq.map (fun key ->
                     SecretKeyAuthentication.sign key authenticatorHash
-                    |> bimap EncryptionSodiumError (fun x -> x.Get |> take 32))
+                    |>> fun x -> x.Get |> take 32)
                 |> List.ofSeq
                 |> List.sequence
         }
@@ -193,13 +176,12 @@ let encryptTo
             Boolean doneFlag
             Array <| (authenticators |> Seq.map Str |> Seq.toArray)
 
-            if doneFlag then
-                let cipherTextLength = buffersFactory.GetCipherTextLength(readBytes)
-                Str buffers.CipherText.[..cipherTextLength-1]
-            else Str buffers.CipherText
+            if doneFlag
+            then Str cipherTextBuffer.Value[..cipherTextLength-1]
+            else Str cipherTextBuffer.Value
         |]
 
-        do! save payload
+        save payload
         if not doneFlag then return! iter (index + 1)
     }
 
@@ -209,7 +191,6 @@ let encryptTo
 type DecryptionError =
     | DecryptionSodiumError of SodiumError
     | ParsingError of String
-    | WriteError of IOException
     | UnsupportedSaltpackVersion
     | WrongMode
     | UnexpectedFormat of string
@@ -218,7 +199,7 @@ type DecryptionError =
 
 let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict {
     let! rawHeader =
-        Parser.run binary input
+        run binary input
         |> Result.mapError (konst <| ParsingError "Invalid outer header format")
     let! headerHash =
         HashingSHA512.hash rawHeader
@@ -261,7 +242,7 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
         >>. versionInfoParser
         >>. modeParser
         >>. pipe3 ephemeralPublicKeyParser senderSecretBoxParser recipientListParser tuple3
-    let! (ephemeralPublicKey, senderSecretBox, recipientList) =
+    let! ephemeralPublicKey, senderSecretBox, recipientList =
         runWithArray headerParser rawHeader
 
     let! sharedSecret =
@@ -307,9 +288,7 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
             (fst recipientKeyPair, ephemeralPublicKey)
         |> Result.mapError DecryptionSodiumError
 
-    let write buffer =
-        try output.Write(buffer, 0, Array.length buffer) |> Ok
-        with | :? IOException as exn -> Error <| WriteError exn
+    let write buffer = output.Write(buffer, 0, Array.length buffer)
 
     let payloadParser =
         let authenticators =
@@ -322,7 +301,7 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
     let rec iter index = monad.strict {
         let! (finalFlag, authenticators : byte[][], payload : byte[]) =
             run payloadParser input
-        let mac = authenticators.[recipientIndex]
+        let mac = authenticators[recipientIndex]
         let nonce = makePayloadNonce index
 
         let! hashState =
@@ -353,8 +332,7 @@ let decryptTo recipientKeyPair (input : Stream) (output : Stream) = monad.strict
             SecretKeyEncryption.decrypt payloadKey nonce payload
             |> Result.mapError DecryptionSodiumError
 
-        do! write plainText
-
+        write plainText
         if not finalFlag then return! iter (index + 1) else return ()
     }
 

@@ -2,7 +2,6 @@
 module FsSaltpack.Armoring
 
 open System
-open System.Globalization
 open System.Numerics
 open System.Text
 open FSharpPlus
@@ -26,7 +25,7 @@ let internal encode input =
     let rec generator x = seq {
         let remainder = x % alphabetLength |> int
         let next = x / alphabetLength
-        yield alphabet.[Math.Abs(remainder)]
+        yield alphabet[Math.Abs(remainder)]
         yield! generator next
     }
     //Extend input by one 0uy to eliminate BigInt negative numbers

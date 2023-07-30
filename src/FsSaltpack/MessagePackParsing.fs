@@ -98,10 +98,10 @@ let private twoByteLength = pbyte .>>. pbyte |>> fun (l, r) -> l * 256 + r
 let private fourByteLength : Parser<int, _> =
     multiple 4 pbyte
     |>> fun bytes ->
-        bytes.[0] * 16777216
-        + bytes.[1] * 65536
-        + bytes.[2] * 256
-        + bytes.[3]
+        bytes[0] * 16777216
+        + bytes[1] * 65536
+        + bytes[2] * 256
+        + bytes[3]
 let binary =
     let fixStr =
         pbyte
