@@ -12,6 +12,11 @@ nuget Milekic.YoLo storage: packages
 nuget GitInfo < 3 copy_local: true
 nuget Microsoft.SourceLink.GitHub copy_local: true
 nuget FsSodium prerelease
+nuget Avalonia < 0.11
+nuget Avalonia.Diagnostics
+nuget JaggerJo.Avalonia.FuncUI.DSL = 0.5.3
+nuget JaggerJo.Avalonia.FuncUI.Elmish = 0.5.3
+nuget Dotnet.Bundle
 
 // Testing
 nuget Microsoft.NET.Test.Sdk

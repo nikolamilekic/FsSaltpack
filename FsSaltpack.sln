@@ -33,6 +33,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.github\workflows\Release.yml = .github\workflows\Release.yml
 	EndProjectSection
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SaltShaker", "src\SaltShaker\SaltShaker.fsproj", "{B2A992FB-A4A0-4E54-8590-754EE84F3C33}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -82,10 +84,23 @@ Global
 		{EB70905D-2946-4F24-823C-10F8CB51E039}.Release|x64.Build.0 = Release|Any CPU
 		{EB70905D-2946-4F24-823C-10F8CB51E039}.Release|x86.ActiveCfg = Release|Any CPU
 		{EB70905D-2946-4F24-823C-10F8CB51E039}.Release|x86.Build.0 = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|x64.Build.0 = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Debug|x86.Build.0 = Debug|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|x64.ActiveCfg = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|x64.Build.0 = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|x86.ActiveCfg = Release|Any CPU
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{8DD3CCE4-A583-4090-B3FF-DF0558A545E5} = {3ADCF458-A31F-4623-B6EB-3B6B27BB209A}
 		{75987B52-F8C2-44FF-AF6C-D6B10EA175B0} = {8861D801-86F7-4A24-89BA-D440F725D169}
 		{EB70905D-2946-4F24-823C-10F8CB51E039} = {3ADCF458-A31F-4623-B6EB-3B6B27BB209A}
+		{B2A992FB-A4A0-4E54-8590-754EE84F3C33} = {3ADCF458-A31F-4623-B6EB-3B6B27BB209A}
 	EndGlobalSection
 EndGlobal

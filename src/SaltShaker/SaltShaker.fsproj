@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Description>UI for encrypting text using saltpack</Description>
+    <Authors>Nikola Milekic</Authors>
+    <TargetFramework>net6.0</TargetFramework>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/nikolamilekic/FsSaltpack</PackageProjectUrl>
+    <Copyright>Copyright © $([System.DateTime]::Now.Year) Nikola Milekic</Copyright>
+    <CFBundleName>SaltShaker</CFBundleName>
+    <CFBundleDisplayName>SaltShaker</CFBundleDisplayName>
+    <CFBundleExecutable>SaltShaker</CFBundleExecutable>
+    <CFBundleIdentifier>com.nikolamilekic.saltshaker</CFBundleIdentifier>
+    <ApplicationIcon>Lock.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FsSaltpack\FsSaltpack.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Lock.ico" />
+    <Content Include="paket.references" />
+    <Compile Include="MainWindow.fs" />
+    <Compile Include="Program.fs" />
+    <AvaloniaResource Include="**\*.xaml" />
+  </ItemGroup>
+  <Import Project="..\..\.paket\Paket.Restore.targets" />
+</Project>
