@@ -8,9 +8,9 @@ let processCommand state = function
     | UnloadKeys -> [ KeyUnloaded ]
     | GenerateKey ->
         let keypair = PublicKeyEncryption.SecretKey.Generate() |> Result.get
-        [ KeyEntered keypair ]
+        [ KeyLoaded keypair ]
     | UpdateSecretKey x -> [ SecretKeyUpdated x ]
-    | EnterKeys ->
+    | LoadKeys ->
         let result = monad.strict {
             let! _, secretKeyBytes = Bech32.decode state.SecretKey |> first (fun x -> x.ToString())
             let! sk = PublicKeyEncryption.SecretKey.Import secretKeyBytes |> first (konst "Secret key is not valid")
@@ -18,5 +18,5 @@ let processCommand state = function
             return sk, pk
         }
         match result with
-        | Ok kp -> [ KeyEntered kp ]
+        | Ok kp -> [ KeyLoaded kp ]
         | Error e -> [ SecretKeyErrorOccurred e ]

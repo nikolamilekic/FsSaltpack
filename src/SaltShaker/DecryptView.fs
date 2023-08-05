@@ -3,12 +3,14 @@
 open System
 open System.Threading
 open FSharp.Control.Reactive
+open FSharpPlus
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
 open Avalonia.Interactivity
+open Milekic.FsBech32
 
-let make (state : EncryptDecryptState) dispatch = Grid.create [
-    Grid.rowDefinitions "Auto * Auto *"
+let make (state : DecryptViewState) dispatch = Grid.create [
+    Grid.rowDefinitions "Auto * Auto * Auto"
     Panel.classes [ "main-panel" ]
     Panel.children [
         TextBlock.create [ Grid.row 0; TextBlock.text "Cipher Text:" ]
@@ -20,7 +22,7 @@ let make (state : EncryptDecryptState) dispatch = Grid.create [
             TextBox.init (fun (tb : TextBox) ->
                 let handler (args : RoutedEventArgs) =
                     dispatch (UpdateCipherText (args.Source :?> TextBox).Text)
-                    dispatch Decrypt
+                    dispatch (Decrypt (args.Source :?> TextBox).Text)
 
                 tb.TextChanged
                 |> Observable.throttle (TimeSpan.FromMilliseconds 300.)
@@ -35,6 +37,17 @@ let make (state : EncryptDecryptState) dispatch = Grid.create [
             Grid.row 3
             yield! EncryptDecryptCommon.bigTextBoxProperties
             TextBox.text state.PlainText
+            TextBox.isReadOnly true
+        ]
+
+        let senderDescription =
+            match state.Sender with
+            | None when state.PlainText <> "" -> "Unknown sender"
+            | None -> ""
+            | Some sender -> $"Sender: {Bech32.encode KeyViewEventProcessor.publicKeyPrefix sender.Get |> Result.get}"
+        TextBox.create [
+            Grid.row 4
+            TextBox.text senderDescription
             TextBox.isReadOnly true
         ]
     ]

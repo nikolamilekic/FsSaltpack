@@ -10,7 +10,7 @@ let processEvent state = function
     | SecretKeyUpdated x -> { state with SecretKey = x; SecretKeyError = "" }
     | SecretKeyErrorOccurred x -> { state with SecretKeyError = x }
     | KeyUnloaded -> zero
-    | KeyEntered (sk, pk) ->
+    | KeyLoaded (sk, pk) ->
         { state with
             SecretKey = Bech32.encode secretKeyPrefix sk.Get |> Result.get
             PublicKey = Bech32.encode publicKeyPrefix pk.Get |> Result.get

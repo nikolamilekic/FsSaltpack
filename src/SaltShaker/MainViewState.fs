@@ -5,8 +5,8 @@ open FSharpPlus
 type MainViewState =
     {
         KeyViewState : KeyViewState
-        EncryptViewState : EncryptDecryptState
-        DecryptViewState : EncryptDecryptState
+        EncryptViewState : EncryptViewState
+        DecryptViewState : DecryptViewState
     }
     static member Zero = {
         KeyViewState = zero
@@ -18,9 +18,9 @@ type MainViewState =
 
 type MainViewCommand =
     | KeyViewCommand of KeyViewCommand
-    | EncryptViewCommand of EncryptDecryptCommand
-    | DecryptViewCommand of EncryptDecryptCommand
+    | EncryptViewCommand of EncryptViewCommand
+    | DecryptViewCommand of DecryptViewCommand
 type MainViewEvent =
     | KeyViewEvent of KeyViewEvent
-    | EncryptViewEvent of EncryptDecryptEvent
-    | DecryptViewEvent of EncryptDecryptEvent
+    | EncryptViewEvent of EncryptViewEvent
+    | DecryptViewEvent of DecryptViewEvent

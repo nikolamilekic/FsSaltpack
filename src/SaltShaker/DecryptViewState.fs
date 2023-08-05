@@ -2,29 +2,26 @@
 
 open FsSodium
 
-type EncryptDecryptState =
+type DecryptViewState =
     {
         PlainText : string
         CipherText : string
-        LastPlainTextInput : string
         Keypair : (PublicKeyEncryption.SecretKey * PublicKeyEncryption.PublicKey) option
         CipherTextError : string
+        Sender : PublicKeyEncryption.PublicKey option
     }
     static member Zero = {
         PlainText = ""
         CipherText = ""
-        LastPlainTextInput = ""
         Keypair = None
         CipherTextError = ""
+        Sender = None
     }
 
-type EncryptDecryptCommand =
-    | UpdatePlainText of string
+type DecryptViewCommand =
+    | Decrypt of string
     | UpdateCipherText of string
-    | Encrypt
-    | Decrypt
-type EncryptDecryptEvent =
-    | PlainTextUpdated of string
+type DecryptViewEvent =
     | CipherTextUpdated of string
-    | CipherTextErrorUpdated of string
-    | LastPlainTextInputUpdated of string
+    | TextDecrypted of PublicKeyEncryption.PublicKey option * string
+    | TextDecryptionFailed of string

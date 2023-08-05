@@ -2,17 +2,51 @@
 
 open System
 open System.Threading
-open Avalonia.Interactivity
+open Avalonia.Layout
 open FSharp.Core
 open FSharp.Control.Reactive
+open FSharpPlus
+open Milekic.FsBech32
+open Avalonia.Interactivity
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
 
-let make (state : EncryptDecryptState) dispatch = Grid.create [
+let make (state : EncryptViewState) dispatch = Grid.create [
     Grid.rowDefinitions "Auto * Auto *"
     Panel.classes [ "main-panel" ]
     Panel.children [
-        TextBlock.create [ Grid.row 0; TextBlock.text "Plain Text:" ]
+        StackPanel.create [
+            Grid.row 0
+            Panel.children [
+                TextBlock.create [ TextBlock.text "Recipients:" ]
+                ListBox.create [
+                    ListBox.dataItems (state.Recipients |>> fun r ->
+                        Bech32.encode KeyViewEventProcessor.publicKeyPrefix r.Get |> Result.get)
+                ]
+                TextBlock.create [ TextBlock.text "Add Recipient:" ]
+                TextBox.create [
+                    TextBox.text state.AddRecipientInput
+                    TextBox.errors (
+                        if String.IsNullOrEmpty state.RecipientInputError
+                        then [] else [ state.RecipientInputError ] )
+                    TextBox.onTextChanged (UpdateAddRecipientInput >> dispatch)
+                ]
+                StackPanel.create [
+                    StackPanel.orientation Orientation.Horizontal
+                    Panel.children [
+                        Button.create [
+                            Button.content "Add Recipient"
+                            Button.onClick (fun _ -> dispatch AddRecipient)
+                        ]
+                        Button.create [
+                            Button.content "Clear Recipients"
+                            Button.onClick (fun _ -> dispatch ClearRecipients)
+                        ]
+                    ]
+                ]
+                TextBlock.create [ TextBlock.text "Plain Text:" ]
+            ]
+        ]
         TextBox.create [
             Grid.row 1
             yield! EncryptDecryptCommon.bigTextBoxProperties

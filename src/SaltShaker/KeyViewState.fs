@@ -24,9 +24,9 @@ type KeyViewCommand =
     | UpdateSecretKey of string
     | GenerateKey
     | UnloadKeys
-    | EnterKeys
+    | LoadKeys
 type KeyViewEvent =
     | SecretKeyUpdated of string
-    | KeyEntered of PublicKeyEncryption.SecretKey * PublicKeyEncryption.PublicKey
+    | KeyLoaded of PublicKeyEncryption.SecretKey * PublicKeyEncryption.PublicKey
     | KeyUnloaded
     | SecretKeyErrorOccurred of string

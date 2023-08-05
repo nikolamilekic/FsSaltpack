@@ -21,8 +21,8 @@ let make (state : KeyViewState) dispatch = StackPanel.create [
                     Button.isEnabled state.CanUnload
                 ]
                 Button.create [
-                    Button.content "Enter"
-                    Button.onClick (fun _ -> dispatch EnterKeys)
+                    Button.content "Load"
+                    Button.onClick (fun _ -> dispatch LoadKeys)
                     Button.isEnabled state.CanEnter
                 ]
             ]
@@ -34,10 +34,15 @@ let make (state : KeyViewState) dispatch = StackPanel.create [
             TextBox.isReadOnly (not state.CanChangeSecretKey)
             TextBox.onTextChanged (UpdateSecretKey >> dispatch)
         ]
-        TextBlock.create [ TextBlock.text "Public Key:" ]
-        TextBox.create [
-            TextBox.text state.PublicKey
-            TextBox.isReadOnly true
+        StackPanel.create [
+            Control.isVisible (not state.CanChangeSecretKey)
+            StackPanel.children [
+                TextBlock.create [ TextBlock.text "Public Key:" ]
+                TextBox.create [
+                    TextBox.text state.PublicKey
+                    TextBox.isReadOnly true
+                ]
+            ]
         ]
     ]
 ]
