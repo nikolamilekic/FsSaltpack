@@ -19,7 +19,6 @@
   <ItemGroup>
     <EmbeddedResource Include="Lock.ico" />
     <Content Include="paket.references" />
-    <Compile Include="TypingDelay.fs" />
     <Compile Include="KeyViewState.fs" />
     <Compile Include="KeyViewCommandProcessor.fs" />
     <Compile Include="KeyViewEventProcessor.fs" />

@@ -10,3 +10,4 @@ Avalonia.FuncUI
 Avalonia.FuncUI.Elmish
 Dotnet.Bundle
 Milekic.FsBech32
+FSharp.Control.Reactive

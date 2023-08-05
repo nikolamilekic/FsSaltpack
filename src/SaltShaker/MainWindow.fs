@@ -14,9 +14,7 @@ open FSharpPlus
 type MainWindow() as this =
     inherit HostWindow()
 
-    let mainView = MainView()
-
-    let view = mainView.Make
+    let view = MainView.make
 
     let update command state =
         let events = MainViewCommandProcessor.processCommand state command
