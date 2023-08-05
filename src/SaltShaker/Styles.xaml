@@ -1,6 +1,13 @@
-<Styles
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <SolidColorBrush x:Key="SystemControlErrorTextForegroundBrush">Red</SolidColorBrush>
+    </Styles.Resources>
 
-
+    <Style Selector="TextBlock,TextBox,Button">
+        <Setter Property="Margin" Value="3"/>
+    </Style>
+    <Style Selector=":is(Panel).main-panel">
+        <Setter Property="Margin" Value="3"/>
+    </Style>
 </Styles>

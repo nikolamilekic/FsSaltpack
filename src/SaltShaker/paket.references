@@ -4,6 +4,9 @@ Milekic.YoLo
 FsSodium
 GitInfo
 Avalonia.Diagnostics
-JaggerJo.Avalonia.FuncUI.DSL
-JaggerJo.Avalonia.FuncUI.Elmish
+Avalonia.Desktop
+Avalonia.Themes.Fluent
+Avalonia.FuncUI
+Avalonia.FuncUI.Elmish
 Dotnet.Bundle
+Milekic.FsBech32

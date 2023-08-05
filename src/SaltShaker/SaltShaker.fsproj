@@ -19,6 +19,21 @@
   <ItemGroup>
     <EmbeddedResource Include="Lock.ico" />
     <Content Include="paket.references" />
+    <Compile Include="TypingDelay.fs" />
+    <Compile Include="KeyViewState.fs" />
+    <Compile Include="KeyViewCommandProcessor.fs" />
+    <Compile Include="KeyViewEventProcessor.fs" />
+    <Compile Include="KeyView.fs" />
+    <Compile Include="EncryptDecryptState.fs" />
+    <Compile Include="EncryptDecryptCommandProcessor.fs" />
+    <Compile Include="EncryptDecryptEventProcessor.fs" />
+    <Compile Include="EncryptDecryptCommon.fs" />
+    <Compile Include="EncryptView.fs" />
+    <Compile Include="DecryptView.fs" />
+    <Compile Include="MainViewState.fs" />
+    <Compile Include="MainViewCommandProcessor.fs" />
+    <Compile Include="MainViewEventProcessor.fs" />
+    <Compile Include="MainView.fs" />
     <Compile Include="MainWindow.fs" />
     <Compile Include="Program.fs" />
     <AvaloniaResource Include="**\*.xaml" />

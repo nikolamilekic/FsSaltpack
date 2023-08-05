@@ -1,29 +1,29 @@
-namespace KeyKeeper
+namespace SaltShaker
 
 open System
-open System.Reactive.Disposables
-open System.Threading.Tasks
 open System.Reflection
-open Avalonia.Layout
+open Avalonia.Media
 open Elmish
 open Avalonia
 open Avalonia.Controls
-open Avalonia.Input
 open Avalonia.FuncUI
-open Avalonia.FuncUI.DSL
-open Avalonia.FuncUI.Hosts
 open Avalonia.FuncUI.Elmish
+open Avalonia.FuncUI.Hosts
 open FSharpPlus
-open FSharpPlus.Data
 
 type MainWindow() as this =
     inherit HostWindow()
 
-    let view state dispatch = Grid.create []
+    let mainView = MainView()
 
-    let update message state = state, Cmd.none
+    let view = mainView.Make
 
-    let init = (), []
+    let update command state =
+        let events = MainViewCommandProcessor.processCommand state command
+        let newState = events |> List.fold MainViewEventProcessor.processEvent state
+        newState, Cmd.none
+
+    let init _ = zero, []
 
     let version =
         if String.IsNullOrEmpty ThisAssembly.Git.SemVer.DashLabel
@@ -31,7 +31,9 @@ type MainWindow() as this =
         else $"{ThisAssembly.Git.BaseVersion.Major}.{ThisAssembly.Git.BaseVersion.Minor}.{ThisAssembly.Git.BaseVersion.Patch}{ThisAssembly.Git.SemVer.DashLabel}.{ThisAssembly.Git.Commits}"
 
     do
+        base.Background <- SolidColorBrush(0xff282828u)
         base.Title <- $"SaltShaker v{version}"
+        base.Margin <- Thickness(0.)
         base.Width <- 800.0
         base.Height <- 600.0
         base.MinWidth <- 800.0
@@ -45,6 +47,6 @@ type MainWindow() as this =
         this.AttachDevTools()
         #endif
 
-        Elmish.Program.mkProgram (fun () -> init) update view
+        Elmish.Program.mkProgram init update view
         |> Program.withHost this
         |> Program.run

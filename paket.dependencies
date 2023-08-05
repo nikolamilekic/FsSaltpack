@@ -2,7 +2,6 @@ source https://api.nuget.org/v3/index.json
 source https://nuget.nikolamilekic.com/index.json
 
 storage: none
-strategy: min
 
 framework: auto-detect
 
@@ -12,11 +11,13 @@ nuget Milekic.YoLo storage: packages
 nuget GitInfo < 3 copy_local: true
 nuget Microsoft.SourceLink.GitHub copy_local: true
 nuget FsSodium prerelease
-nuget Avalonia < 0.11
 nuget Avalonia.Diagnostics
-nuget JaggerJo.Avalonia.FuncUI.DSL = 0.5.3
-nuget JaggerJo.Avalonia.FuncUI.Elmish = 0.5.3
+nuget Avalonia.Desktop
+nuget Avalonia.Themes.Fluent
+nuget Avalonia.FuncUI
+nuget Avalonia.FuncUI.Elmish
 nuget Dotnet.Bundle
+nuget Milekic.FsBech32
 
 // Testing
 nuget Microsoft.NET.Test.Sdk
