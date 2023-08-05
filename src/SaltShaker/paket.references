@@ -11,6 +11,3 @@ Avalonia.FuncUI.Elmish
 Dotnet.Bundle
 Milekic.FsBech32
 FSharp.Control.Reactive
-FParsec
-File: WordList.fs
-File: KeyHandling.fs

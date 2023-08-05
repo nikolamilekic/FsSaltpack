@@ -10,7 +10,6 @@ open Milekic.FsBech32
 open Avalonia.Interactivity
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
-open KeyKeeper.Core
 
 let make (state : EncryptViewState) dispatch = Grid.create [
     Grid.rowDefinitions "Auto * Auto 110"

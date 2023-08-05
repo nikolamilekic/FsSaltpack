@@ -5,7 +5,6 @@ open Avalonia.Layout
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
 open FSharpPlus
-open KeyKeeper.Core
 
 let make (state : KeyViewState) dispatch = StackPanel.create [
     Panel.classes [ "main-panel" ]

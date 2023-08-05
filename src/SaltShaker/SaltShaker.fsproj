@@ -15,19 +15,13 @@
     <ApplicationIcon>Lock.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\paket-files\nikolamilekic\KeyKeeper\src\KeyKeeper.Core\WordList.fs">
-      <Paket>True</Paket>
-      <Link>paket-files/WordList.fs</Link>
-    </Compile>
-    <Compile Include="..\..\paket-files\nikolamilekic\KeyKeeper\src\KeyKeeper.Core\KeyHandling.fs">
-      <Paket>True</Paket>
-      <Link>paket-files/KeyHandling.fs</Link>
-    </Compile>
     <ProjectReference Include="..\FsSaltpack\FsSaltpack.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Lock.ico" />
     <Content Include="paket.references" />
+    <Compile Include="WordList.fs" />
+    <Compile Include="KeyHandling.fs" />
     <Compile Include="KeyViewState.fs" />
     <Compile Include="KeyViewCommandProcessor.fs" />
     <Compile Include="KeyViewEventProcessor.fs" />
