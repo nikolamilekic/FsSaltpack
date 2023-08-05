@@ -8,7 +8,9 @@ let processEvent state = function
         { state with
             Recipients = pk::state.Recipients
             RecipientInputError = ""
-            AddRecipientInput = "" }
+            AddRecipientInput = ""
+            CipherText = ""
+            LastPlainTextInput = "" }
     | RecipientsCleared ->
         { state with
             Recipients = []

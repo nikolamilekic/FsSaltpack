@@ -1,4 +1,5 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <Description>UI for encrypting text using saltpack</Description>
@@ -14,6 +15,14 @@
     <ApplicationIcon>Lock.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\paket-files\nikolamilekic\KeyKeeper\src\KeyKeeper.Core\WordList.fs">
+      <Paket>True</Paket>
+      <Link>paket-files/WordList.fs</Link>
+    </Compile>
+    <Compile Include="..\..\paket-files\nikolamilekic\KeyKeeper\src\KeyKeeper.Core\KeyHandling.fs">
+      <Paket>True</Paket>
+      <Link>paket-files/KeyHandling.fs</Link>
+    </Compile>
     <ProjectReference Include="..\FsSaltpack\FsSaltpack.fsproj" />
   </ItemGroup>
   <ItemGroup>

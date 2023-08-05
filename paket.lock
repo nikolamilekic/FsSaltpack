@@ -87,6 +87,8 @@ NUGET
     Expecto.FsCheck (9.0.4)
       Expecto (>= 9.0.4)
       FsCheck (>= 2.14.3)
+    FParsec (1.1.1)
+      FSharp.Core (>= 4.3.4)
     FsCheck (2.16.6)
       FSharp.Core (>= 4.2.3)
     FSharp.Control.Reactive (5.0.5)
@@ -214,7 +216,10 @@ NUGET
       FSharp.Core (>= 6.0)
       FSharpPlus (>= 1.2.2)
       Milekic.YoLo (>= 3.1)
-
+GITHUB
+  remote: nikolamilekic/KeyKeeper
+    src/KeyKeeper.Core/KeyHandling.fs (bc4afa433d1f58d7a9d8caa18c6eb590d31e1134) githubAuthKey
+    src/KeyKeeper.Core/WordList.fs (bc4afa433d1f58d7a9d8caa18c6eb590d31e1134) githubAuthKey
 GROUP Console
 STORAGE: NONE
 RESTRICTION: == net6.0

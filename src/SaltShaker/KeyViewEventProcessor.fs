@@ -14,6 +14,7 @@ let processEvent state = function
         { state with
             SecretKey = Bech32.encode secretKeyPrefix sk.Get |> Result.get
             PublicKey = Bech32.encode publicKeyPrefix pk.Get |> Result.get
+            ParsedPublicKey = Some pk
             CanEnter = false
             CanUnload = true
             CanChangeSecretKey = false }

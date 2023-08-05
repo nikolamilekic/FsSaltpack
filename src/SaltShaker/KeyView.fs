@@ -4,6 +4,8 @@ open System
 open Avalonia.Layout
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
+open FSharpPlus
+open KeyKeeper.Core
 
 let make (state : KeyViewState) dispatch = StackPanel.create [
     Panel.classes [ "main-panel" ]
@@ -40,6 +42,11 @@ let make (state : KeyViewState) dispatch = StackPanel.create [
                 TextBlock.create [ TextBlock.text "Public Key:" ]
                 TextBox.create [
                     TextBox.text state.PublicKey
+                    TextBox.isReadOnly true
+                ]
+                TextBlock.create [ TextBlock.text "Public Key Shorthand:" ]
+                TextBox.create [
+                    TextBox.text (state.ParsedPublicKey |>> KeyHandling.publicKeyToTwoWordId |> Option.defaultValue "")
                     TextBox.isReadOnly true
                 ]
             ]

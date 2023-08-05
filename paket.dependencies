@@ -19,6 +19,11 @@ nuget Avalonia.FuncUI.Elmish
 nuget Dotnet.Bundle
 nuget Milekic.FsBech32
 nuget FSharp.Control.Reactive
+nuget FParsec
+
+github nikolamilekic/KeyKeeper:bc4afa433d1f58d7a9d8caa18c6eb590d31e1134 src/KeyKeeper.Core/KeyHandling.fs githubAuthKey
+github nikolamilekic/KeyKeeper:bc4afa433d1f58d7a9d8caa18c6eb590d31e1134 src/KeyKeeper.Core/WordList.fs githubAuthKey
+
 
 // Testing
 nuget Microsoft.NET.Test.Sdk

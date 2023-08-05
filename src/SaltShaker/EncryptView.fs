@@ -10,9 +10,10 @@ open Milekic.FsBech32
 open Avalonia.Interactivity
 open Avalonia.FuncUI.DSL
 open Avalonia.Controls
+open KeyKeeper.Core
 
 let make (state : EncryptViewState) dispatch = Grid.create [
-    Grid.rowDefinitions "Auto * Auto *"
+    Grid.rowDefinitions "Auto * Auto 110"
     Panel.classes [ "main-panel" ]
     Panel.children [
         StackPanel.create [
@@ -21,7 +22,8 @@ let make (state : EncryptViewState) dispatch = Grid.create [
                 TextBlock.create [ TextBlock.text "Recipients:" ]
                 ListBox.create [
                     ListBox.dataItems (state.Recipients |>> fun r ->
-                        Bech32.encode KeyViewEventProcessor.publicKeyPrefix r.Get |> Result.get)
+                        let shorthand = KeyHandling.publicKeyToTwoWordId r
+                        (Bech32.encode KeyViewEventProcessor.publicKeyPrefix r.Get |> Result.get) + $" ({shorthand})")
                 ]
                 TextBlock.create [ TextBlock.text "Add Recipient:" ]
                 TextBox.create [

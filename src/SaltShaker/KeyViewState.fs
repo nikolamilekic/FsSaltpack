@@ -10,6 +10,7 @@ type KeyViewState =
         CanEnter : bool
         CanUnload : bool
         CanChangeSecretKey : bool
+        ParsedPublicKey : PublicKeyEncryption.PublicKey option
     }
     static member Zero = {
         PublicKey = ""
@@ -18,6 +19,7 @@ type KeyViewState =
         CanEnter = true
         CanUnload = false
         CanChangeSecretKey = true
+        ParsedPublicKey = None
     }
 
 type KeyViewCommand =

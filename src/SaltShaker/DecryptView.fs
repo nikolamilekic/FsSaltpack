@@ -8,9 +8,10 @@ open Avalonia.FuncUI.DSL
 open Avalonia.Controls
 open Avalonia.Interactivity
 open Milekic.FsBech32
+open KeyKeeper.Core
 
 let make (state : DecryptViewState) dispatch = Grid.create [
-    Grid.rowDefinitions "Auto * Auto * Auto"
+    Grid.rowDefinitions "Auto 110 Auto * Auto"
     Panel.classes [ "main-panel" ]
     Panel.children [
         TextBlock.create [ Grid.row 0; TextBlock.text "Cipher Text:" ]
@@ -42,13 +43,21 @@ let make (state : DecryptViewState) dispatch = Grid.create [
 
         let senderDescription =
             match state.Sender with
-            | None when state.PlainText <> "" -> "Unknown sender"
+            | None when state.PlainText <> "" -> "Unknown"
             | None -> ""
-            | Some sender -> $"Sender: {Bech32.encode KeyViewEventProcessor.publicKeyPrefix sender.Get |> Result.get}"
-        TextBox.create [
+            | Some sender ->
+                let shorthand = KeyHandling.publicKeyToTwoWordId sender
+                $"{Bech32.encode KeyViewEventProcessor.publicKeyPrefix sender.Get |> Result.get} ({shorthand})"
+
+        StackPanel.create [
             Grid.row 4
-            TextBox.text senderDescription
-            TextBox.isReadOnly true
+            Panel.children [
+                TextBlock.create [ TextBlock.text "Sender:" ]
+                TextBox.create [
+                    TextBox.text senderDescription
+                    TextBox.isReadOnly true
+                ]
+            ]
         ]
     ]
 ]
